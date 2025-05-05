@@ -1,0 +1,500 @@
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.cpp b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.cpp
+index a81126d1a387..58522420d6d2 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.cpp
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.cpp
+@@ -192,6 +192,68 @@ bool FUbaHordeAgent::IsValid()
+ 	return bIsValid && !bHasErrors;
+ }
+
++bool FUbaHordeAgent::PollForListeningOn()
++{
++	EAgentMessageType Type = EAgentMessageType::None;
++	constexpr int32 ReadresponseTimeoutMS = 100;
++	while ((Type = ChildChannel->ReadResponse(ReadresponseTimeoutMS)) != EAgentMessageType::None)
++	{
++		switch (Type)
++		{
++		case EAgentMessageType::ExecuteOutput:
++		{
++			if (ChildChannel->GetResponseSize() > 0)
++			{
++				// Convert raw buffer to dynamic array for modification
++				const ANSICHAR* ResponseDataRaw = reinterpret_cast<const ANSICHAR*>(ChildChannel->GetResponseData());
++				TArray<ANSICHAR> ResponseData(ResponseDataRaw, ChildChannel->GetResponseSize());
++
++				// Remove trailing newline characters and add NUL-terminator
++				while (ResponseData.Num() > 0 && (ResponseData.Last() == '\n' || ResponseData.Last() == '\r'))
++				{
++					ResponseData.Pop(EAllowShrinking::No);
++				}
++				ResponseData.Add('\0');
++
++				FString ResponseString(ANSI_TO_TCHAR(ResponseData.GetData()), ResponseData.Num());
++
++				UE_LOG(LogUbaHordeAgent, Log, TEXT("Response [ExecuteOutput]: %s"), *ResponseString);
++
++				if (ResponseString.Contains(TEXT("Listening on")))
++				{
++					return true;
++				}
++			}
++		}
++		break;
++
++		case EAgentMessageType::ExecuteResult:
++		{
++			if (ChildChannel->GetResponseSize() == sizeof(int32))
++			{
++				const int32* ResponseData = reinterpret_cast<const int32*>(ChildChannel->GetResponseData());
++				const int32 ExecuteExitCode = ResponseData[0];
++				UE_LOG(LogUbaHorde, Log, TEXT("Response [ExecuteResult]: ExitCode=%d"), ExecuteExitCode);
++				bIsValid = false;
++			}
++		}
++		break;
++
++		case EAgentMessageType::Exception:
++		{
++			AgentMessage::FException Ex;
++			ChildChannel->ReadException(Ex);
++			UE_LOG(LogUbaHorde, Log, TEXT("EXCEPTION Message: %s"), *FString(Ex.Message));
++			UE_LOG(LogUbaHorde, Log, TEXT("EXCEPTION Description: %s"), *FString(Ex.Description));
++		}
++		break;
++
++		}
++	}
++
++	return false;
++}
++
+ void FUbaHordeAgent::Poll(bool LogReports)
+ {
+ 	EAgentMessageType Type = EAgentMessageType::None;
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.h b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.h
+index e84ad2be3f91..64cba3876602 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.h
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.h
+@@ -30,6 +30,8 @@ public:
+
+ 	bool IsValid();
+
++	bool PollForListeningOn();
++
+ 	// Reads output from the child channel and reports them to the log of the calling process.
+ 	void Poll(bool LogReports);
+
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp
+index 00e05e789cfb..648b8fa706c9 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp
+@@ -338,7 +338,7 @@ void FUbaHordeAgentManager::ThreadAgent(FHordeAgentWrapper& Wrapper)
+
+ 		// Start the UBA Agent that will connect to us, requesting for work
+
+-		const FAnsiString AgentConnectionArg = bUseListen ? FAnsiString::Printf("-listen=%u", UbaPort) : FAnsiString::Printf("-Host=%s:%u", *UbaHost, UbaPort);
++		const FAnsiString AgentConnectionArg = bUseListen ? FAnsiString::Printf("-listen=%u", Agent->GetMachineInfo().UbaListenPort) : FAnsiString::Printf("-Host=%s:%u", *UbaHost, UbaPort);
+
+ 		const char* UbaAgentArgs[] =
+ 		{
+@@ -373,33 +373,37 @@ void FUbaHordeAgentManager::ThreadAgent(FHordeAgentWrapper& Wrapper)
+ 			UbaAgentCmdArgs += TEXT(" ");
+ 			UbaAgentCmdArgs += ANSI_TO_TCHAR(Arg);
+ 		}
+-		UE_LOG(LogUbaHorde, Log, TEXT("Remote execution on Horde machine [%s:%u]: %s"), *Agent->GetMachineInfo().Ip, UbaPort, *UbaAgentCmdArgs);
+
+ 		MachineCoreCount = MachineInfo.LogicalCores;
+ 		EstimatedCoreCount += MachineCoreCount;
+ 		ActiveCoreCount += MachineCoreCount;
+ 	}
+
+-	uint32 callCounter = 0; // TODO: This should react on the listen string instead of waiting for two text messages :)
+-
++	bool bReceivedListeningOn = false;
+ 	while (Agent->IsValid() && !ShouldExit.Wait(100))
+ 	{
+-		Agent->Poll(UbaCoordinatorHordeModule::bHordeForwardAgentLogs);
++		bool bInitiateConnection = false;
++
++		if (bReceivedListeningOn)
++			Agent->Poll(UbaCoordinatorHordeModule::bHordeForwardAgentLogs);
++		else
++			bInitiateConnection = Agent->PollForListeningOn();
+
+ 		if (!bUseListen)
+ 		{
+ 			continue;
+ 		}
+
+-		if (callCounter++ == 2)
++		if (bInitiateConnection)
+ 		{
+ 			// Add this machine as client to the remote agent
+ 			const FString& IpAddress = Agent->GetMachineInfo().Ip;
+-			const bool bAddClientSuccess = 	m_callback(m_userData, StringCast<uba::tchar>(*IpAddress).Get(), static_cast<uint16>(UbaPort));
++			const bool bAddClientSuccess = 	m_callback(m_userData, StringCast<uba::tchar>(*IpAddress).Get(), Agent->GetMachineInfo().UbaExposedPort);
++			bReceivedListeningOn = true;
+
+ 			if (!bAddClientSuccess)
+ 			{
+-				UE_LOG(LogUbaHorde, Display, TEXT("Server_AddClient(%s:%u) failed"), *IpAddress, UbaPort);
++				UE_LOG(LogUbaHorde, Display, TEXT("Server_AddClient(%s:%u) failed"), *IpAddress, Agent->GetMachineInfo().UbaExposedPort);
+ 				return;
+ 			}
+ 		}
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.cpp b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.cpp
+index 6b3bbb3527ae..5f7818a69478 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.cpp
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.cpp
+@@ -101,6 +101,11 @@ TSharedPtr<FUbaHordeMetaClient::HordeMachinePromise, ESPMode::ThreadSafe> FUbaHo
+ 			}
+
+ 			FString OsFamily(TEXT("UNKNOWN-OS"));
++			FString NonceString = NonceValue->AsString();
++			FString IpString = IpValue->AsString();
++			uint16 PortNumber = (uint16)PortValue->AsNumber();
++			uint16 UbaListenPortNumber = 7001;
++			uint16 UbaExposedPortNumber = UbaListenPortNumber;
+
+ 			if (TSharedPtr<FJsonValue> PropertiesValue = OutJson->AsObject()->TryGetField(TEXT("properties")))
+ 			{
+@@ -118,13 +123,21 @@ TSharedPtr<FUbaHordeMetaClient::HordeMachinePromise, ESPMode::ThreadSafe> FUbaHo
+ 					{
+ 						Info.LogicalCores = (uint16)FCString::Atoi(*PropertyElementString + 13);
+ 					}
++					if (PropertyElementString.StartsWith(TEXT("ExposedComputePort=")))
++					{
++						PortNumber = (uint16)FCString::Atoi(*PropertyElementString + 19);
++					}
++					if (PropertyElementString.StartsWith(TEXT("UbaPort=")))
++					{
++						UbaListenPortNumber = (uint16)FCString::Atoi(*PropertyElementString + 8);
++					}
++					if (PropertyElementString.StartsWith(TEXT("ExposedUbaPort=")))
++					{
++						UbaExposedPortNumber = (uint16)FCString::Atoi(*PropertyElementString + 15);
++					}
+ 				}
+ 			}
+
+-			FString NonceString = NonceValue->AsString();
+-			FString IpString = IpValue->AsString();
+-			uint16 PortNumber = (uint16)PortValue->AsNumber();
+-
+ 			if (TSharedPtr<FJsonValue> LeaseIdValue = OutJson->AsObject()->TryGetField(TEXT("leaseId")))
+ 			{
+ 				const FString AgentWebPortalUrl = FString::Format(TEXT("{0}lease/{1}"), { this->ServerUrl, LeaseIdValue->AsString() });
+@@ -139,6 +152,8 @@ TSharedPtr<FUbaHordeMetaClient::HordeMachinePromise, ESPMode::ThreadSafe> FUbaHo
+
+ 			Info.Ip = IpString;
+ 			Info.Port = PortNumber;
++			Info.UbaListenPort = UbaListenPortNumber;
++			Info.UbaExposedPort = UbaExposedPortNumber;
+ 			FString::ToHexBlob(NonceString, Info.Nonce, HORDE_NONCE_SIZE);
+
+ 			Promise->SetValue(MakeTuple(HttpResponse, Info));
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.h b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.h
+index 24c8c604b78f..294a77c3089e 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.h
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.h
+@@ -22,6 +22,8 @@ struct FHordeRemoteMachineInfo
+ {
+ 	FString Ip;
+ 	uint16 Port;
++	uint16 UbaListenPort;
++	uint16 UbaExposedPort;
+ 	uint16 LogicalCores;
+ 	uint8 Nonce[HORDE_NONCE_SIZE];
+ 	bool bRunsWindowOS;
+diff --git a/Engine/Source/Programs/Horde/HordeAgent/Services/CapabilitiesService.cs b/Engine/Source/Programs/Horde/HordeAgent/Services/CapabilitiesService.cs
+index 365c412129d6..cc66e8bfceb7 100644
+--- a/Engine/Source/Programs/Horde/HordeAgent/Services/CapabilitiesService.cs
++++ b/Engine/Source/Programs/Horde/HordeAgent/Services/CapabilitiesService.cs
+@@ -252,51 +252,70 @@ namespace HordeAgent.Services
+ 				}
+
+ 				// Parse the CPU info
+-				List<Dictionary<string, string>>? cpuRecords = await ReadLinuxHwPropsAsync("/proc/cpuinfo", logger);
+-				if (cpuRecords != null)
++				if (
++					_settings.CurrentValue.Properties.TryGetValue("LogicalCoresOverride", out string? logicalCoresOverride) &&
++					_settings.CurrentValue.Properties.TryGetValue("LogicalCoreRatio", out string? logicalCoreRatio)
++				)
+ 				{
+-					Dictionary<string, string> cpuNames = new Dictionary<string, string>(StringComparer.Ordinal);
+-					foreach (Dictionary<string, string> cpuRecord in cpuRecords)
++					int numLogicalCores = Int32.Parse(logicalCoresOverride);
++					int numPhysicalCores = (int)(numLogicalCores / Double.Parse(logicalCoreRatio));
++					AddCpuInfo(capabilities, new Dictionary<string, int>(), numLogicalCores, numPhysicalCores);
++				}
++				else
++				{
++					List<Dictionary<string, string>>? cpuRecords = await ReadLinuxHwPropsAsync("/proc/cpuinfo", logger);
++					if (cpuRecords != null)
+ 					{
+-						if (cpuRecord.TryGetValue("physical id", out string? physicalId) && cpuRecord.TryGetValue("model name", out string? modelName))
++						Dictionary<string, string> cpuNames = new Dictionary<string, string>(StringComparer.Ordinal);
++						foreach (Dictionary<string, string> cpuRecord in cpuRecords)
+ 						{
+-							cpuNames[physicalId] = modelName;
++							if (cpuRecord.TryGetValue("physical id", out string? physicalId) && cpuRecord.TryGetValue("model name", out string? modelName))
++							{
++								cpuNames[physicalId] = modelName;
++							}
+ 						}
+-					}
+
+-					Dictionary<string, int> nameToCount = new Dictionary<string, int>(StringComparer.Ordinal);
+-					foreach (string cpuName in cpuNames.Values)
+-					{
+-						nameToCount.TryGetValue(cpuName, out int count);
+-						nameToCount[cpuName] = count + 1;
+-					}
+-
+-					HashSet<string> logicalCores = new HashSet<string>();
+-					HashSet<string> physicalCores = new HashSet<string>();
+-					foreach (Dictionary<string, string> cpuRecord in cpuRecords)
+-					{
+-						if (cpuRecord.TryGetValue("processor", out string? logicalCoreId))
++						Dictionary<string, int> nameToCount = new Dictionary<string, int>(StringComparer.Ordinal);
++						foreach (string cpuName in cpuNames.Values)
+ 						{
+-							logicalCores.Add(logicalCoreId);
++							nameToCount.TryGetValue(cpuName, out int count);
++							nameToCount[cpuName] = count + 1;
+ 						}
+-						if (cpuRecord.TryGetValue("core id", out string? physicalCoreId))
++
++						HashSet<string> logicalCores = new HashSet<string>();
++						HashSet<string> physicalCores = new HashSet<string>();
++						foreach (Dictionary<string, string> cpuRecord in cpuRecords)
+ 						{
+-							physicalCores.Add(physicalCoreId);
++							if (cpuRecord.TryGetValue("processor", out string? logicalCoreId))
++							{
++								logicalCores.Add(logicalCoreId);
++							}
++							if (cpuRecord.TryGetValue("core id", out string? physicalCoreId))
++							{
++								physicalCores.Add(physicalCoreId);
++							}
+ 						}
+-					}
+
+-					AddCpuInfo(capabilities, nameToCount, logicalCores.Count, physicalCores.Count);
++						AddCpuInfo(capabilities, nameToCount, logicalCores.Count, physicalCores.Count);
++					}
+ 				}
+
+ 				// Parse the RAM info
+-				List<Dictionary<string, string>>? memRecords = await ReadLinuxHwPropsAsync("/proc/meminfo", logger);
+-				if (memRecords != null && memRecords.Count > 0 && memRecords[0].TryGetValue("MemTotal", out string? memTotal))
++				if (_settings.CurrentValue.Properties.TryGetValue("AvailableMemoryOverride", out string? availableMemoryOverride))
+ 				{
+-					Match match = Regex.Match(memTotal, @"(\d+)\s+kB");
+-					if (match.Success)
++					capabilities.Resources.Add(KnownResourceNames.Ram, Convert.ToInt32(Math.Round(Double.Parse(availableMemoryOverride))));
++				}
++				else
++				{
++					List<Dictionary<string, string>>? memRecords = await ReadLinuxHwPropsAsync("/proc/meminfo", logger);
++					if (memRecords != null && memRecords.Count > 0 && memRecords[0].TryGetValue("MemTotal", out string? memTotal))
+ 					{
+-						long totalCapacity = Int64.Parse(match.Groups[1].Value) * 1024;
+-						capabilities.Resources.Add(KnownResourceNames.Ram, (int)(totalCapacity / (1024 * 1024 * 1024)));
++						Match match = Regex.Match(memTotal, @"(\d+)\s+kB");
++						if (match.Success)
++						{
++							long totalCapacity = Int64.Parse(match.Groups[1].Value) * 1024;
++							capabilities.Resources.Add(KnownResourceNames.Ram, (int)(totalCapacity / (1024 * 1024 * 1024)));
++						}
+ 					}
+ 				}
+
+diff --git a/Engine/Source/Programs/Horde/HordeAgent/Services/ComputeListenerService.cs b/Engine/Source/Programs/Horde/HordeAgent/Services/ComputeListenerService.cs
+index 9ac33c5b2064..9a4e97b3da1d 100644
+--- a/Engine/Source/Programs/Horde/HordeAgent/Services/ComputeListenerService.cs
++++ b/Engine/Source/Programs/Horde/HordeAgent/Services/ComputeListenerService.cs
+@@ -176,6 +176,13 @@ namespace HordeAgent.Services
+ 					return;
+ 				}
+
++				string utfString = System.Text.Encoding.UTF8.GetString(nonceBuffer);
++				if (utfString.Contains("/metrics", StringComparison.OrdinalIgnoreCase))
++				{
++					_logger.LogInformation("Metrics request received from Hathora platform {Remote}; safely ignoring this and closing connection.", tcpClient.Client.RemoteEndPoint);
++					return;
++				}
++
+ 				ByteString nonce = new ByteString(nonceBuffer);
+ 				_logger.LogInformation("Incoming connection with nonce {Nonce}", nonce);
+
+diff --git a/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs b/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
+index 6e77c03d1c73..4fd281d8727c 100644
+--- a/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
++++ b/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
+@@ -355,7 +355,29 @@ namespace EpicGames.Horde.Compute.Clients
+ 				switch (response.ConnectionMode)
+ 				{
+ 					case ConnectionMode.Direct:
+-						await socket.ConnectAsync(IPAddress.Parse(response.Ip), response.Port, cancellationToken);
++						int ComputePort = response.Port;
++
++						bool foundOverride = false;
++						foreach (string property in response.Properties)
++						{
++							int equalsIdx = property.IndexOf('=', StringComparison.OrdinalIgnoreCase);
++							StringView propertyName = new(property, 0, equalsIdx);
++
++							if (propertyName == "ExposedComputePort")
++							{
++								foundOverride = true;
++								if (!Int32.TryParse(property.AsSpan(equalsIdx + 1), out ComputePort))
++								{
++									workerLogger.LogError("Failed to parse ExposedComputePort property: {Property}", property);
++								}
++								else
++								{
++									agentAddress = $"{response.Ip}:{ComputePort}";
++								}
++							}
++						}
++
++						await socket.ConnectAsync(IPAddress.Parse(response.Ip), ComputePort, cancellationToken);
+ 						break;
+
+ 					case ConnectionMode.Tunnel when !String.IsNullOrEmpty(response.ConnectionAddress):
+diff --git a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaNetworkClient.cpp b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaNetworkClient.cpp
+index 8aaa18cfa445..19a39f9fc58c 100644
+--- a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaNetworkClient.cpp
++++ b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaNetworkClient.cpp
+@@ -95,6 +95,9 @@ namespace uba
+ 				rc.error = *headerData;
+ 				Guid serverUid = *(Guid*)(headerData+1);
+
++				if (strstr((char *)headerData, "/metrics") != nullptr)
++					rc.error = 10;
++
+ 				if (!rc.error)
+ 				{
+ 					SCOPED_WRITE_LOCK(rc.client.m_serverUidLock, lock);
+@@ -145,6 +148,9 @@ namespace uba
+ 		if (!rc.recvEvent.IsSet(~0u)) // This can not happen. Since both callbacks are using rc we can't leave this function until we know we are not in the callbacks
+ 			return m_logger.Error(TC("Timed out waiting for connection response from server"));
+
++		if (rc.error == 10)
++			return m_logger.Error(TC("Received connection from Hathora Envoy metrics"));
++
+ 		m_isOrWasConnected.Set();
+
+ 		if (rc.error == 1) // Bad version
+diff --git a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
+index 1dadd1611705..002c9a2e4ed8 100644
+--- a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
++++ b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
+@@ -655,7 +655,7 @@ namespace uba
+ 		u32 processSlotCount = reader.ReadU32();
+ 		bool dedicated = reader.ReadBool();
+
+-		StringBuffer<256> info;
++		StringBuffer<750> info;
+ 		reader.ReadString(info);
+
+ 		// I have no explanation for this. On linux we get a shutdown crash when running through UBT if session is allocated with normal new
+diff --git a/Engine/Source/Programs/UnrealBuildTool/Executors/UnrealBuildAccelerator/UBAAgentCoordinatorHorde.cs b/Engine/Source/Programs/UnrealBuildTool/Executors/UnrealBuildAccelerator/UBAAgentCoordinatorHorde.cs
+index 4fce6e076e21..aba1f52ec932 100644
+--- a/Engine/Source/Programs/UnrealBuildTool/Executors/UnrealBuildAccelerator/UBAAgentCoordinatorHorde.cs
++++ b/Engine/Source/Programs/UnrealBuildTool/Executors/UnrealBuildAccelerator/UBAAgentCoordinatorHorde.cs
+@@ -242,7 +242,11 @@ namespace UnrealBuildTool
+ 				"RAM",
+ 				"DiskFreeSpace",
+ 				"PhysicalCores",
+-				"LogicalCores"
++				"LogicalCores",
++				"UbaPort",
++				"ExposedUbaPort",
++				"UbaProxyPort",
++				"ExposedUbaProxyPort"
+ 			};
+
+ 		public async Task<bool> AddWorkerAsync(Requirements requirements, UnrealBuildAcceleratorHordeConfig hordeConfig, CancellationToken cancellationToken, int activeCores)
+@@ -256,8 +260,10 @@ namespace UnrealBuildTool
+
+ 			const string UbaPortName = "UbaPort";
+ 			const string UbaProxyPortName = "UbaProxyPort";
+-			const int UbaPort = 7001;
+-			const int UbaProxyPort = 7002;
++			int UbaPort = 7001;
++			int UbaProxyPort = 7002;
++			int ExposedUbaPort = UbaPort;
++			int ExposedUbaProxyPort = UbaProxyPort;
+
+ 			// Request ID that is unique per attempt to acquire the same compute lease/worker
+ 			// Primarily for tracking worker demand on Horde server as UBAExecutor will repeatedly try adding a new worker
+@@ -286,10 +292,24 @@ namespace UnrealBuildTool
+
+ 				_workerId++;
+
++				if (!lease.Ports.TryGetValue(UbaPortName, out ConnectionMetadataPort? ubaPort))
++				{
++					ubaPort = new ConnectionMetadataPort(UbaPort, UbaPort);
++				}
++
++				if (!lease.Ports.TryGetValue(UbaProxyPortName, out ConnectionMetadataPort? ubaProxyPort))
++				{
++					ubaProxyPort = new ConnectionMetadataPort(UbaProxyPort, UbaProxyPort);
++				}
++
+ 				workerLogger.LogDebug("Agent properties:");
+
+ 				int numLogicalCores = 24; // Assume 24 if something goes wrong here and property is not found
+ 				string computeIp = String.Empty;
++				UbaPort = ubaPort.AgentPort;
++				ExposedUbaPort = ubaPort.Port;
++				UbaProxyPort = ubaProxyPort.AgentPort;
++				ExposedUbaProxyPort = ubaProxyPort.Port;
+ 				foreach (string property in lease.Properties)
+ 				{
+ 					int equalsIdx = property.IndexOf('=', StringComparison.OrdinalIgnoreCase);
+@@ -306,22 +326,31 @@ namespace UnrealBuildTool
+ 						{
+ 							computeIp = property[(equalsIdx + 1)..];
+ 						}
++						else if (propertyName == "UbaPort")
++						{
++							Int32.TryParse(property.AsSpan(equalsIdx + 1), out UbaPort);
++						}
++						else if (propertyName == "ExposedUbaPort")
++						{
++							Int32.TryParse(property.AsSpan(equalsIdx + 1), out ExposedUbaPort);
++						}
++						else if (propertyName == "UbaProxyPort")
++						{
++							Int32.TryParse(property.AsSpan(equalsIdx + 1), out UbaProxyPort);
++						}
++						else if (propertyName == "ExposedUbaProxyPort")
++						{
++							Int32.TryParse(property.AsSpan(equalsIdx + 1), out ExposedUbaProxyPort);
++						}
+ 					}
+ 				}
+
++				ubaPort = new ConnectionMetadataPort(ExposedUbaPort, UbaPort);
++				ubaProxyPort = new ConnectionMetadataPort(ExposedUbaProxyPort, UbaProxyPort);
++
+ 				// When using relay connection mode, the IP will be relay server's IP
+ 				string ip = String.IsNullOrEmpty(lease.Ip) ? computeIp : lease.Ip;
+
+-				if (!lease.Ports.TryGetValue(UbaPortName, out ConnectionMetadataPort? ubaPort))
+-				{
+-					ubaPort = new ConnectionMetadataPort(UbaPort, UbaPort);
+-				}
+-
+-				if (!lease.Ports.TryGetValue(UbaProxyPortName, out ConnectionMetadataPort? ubaProxyPort))
+-				{
+-					ubaProxyPort = new ConnectionMetadataPort(UbaProxyPort, UbaProxyPort);
+-				}
+-
+ 				string exeName = OperatingSystem.IsWindows() ? "UbaAgent.exe" : "UbaAgent";
+ 				BlobLocator locator = _ubaAgentLocator;
+ 				Worker worker = new()
