@@ -58,14 +58,14 @@ jq ".Horde.Properties.HordePoolName = \"${HORDE_POOL_NAME}\"" appsettings.json >
 
 if [ -z "${DISABLE_RESOURCE_OVERRIDE}" ]; then
   # if 5.6
-  jq ".Horde.CpuCount = \"${HATHORA_ALLOCATED_CPU_ROUND}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
-  jq ".Horde.CpuMultiplier = 1" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
-  jq ".Horde.RamGb = \"${HATHORA_ALLOCATED_MEMORY_GB}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
+  # jq ".Horde.CpuCount = \"${HATHORA_ALLOCATED_CPU_ROUND}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
+  # jq ".Horde.CpuMultiplier = 1" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
+  # jq ".Horde.RamGb = \"${HATHORA_ALLOCATED_MEMORY_GB}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
   # else
-  # jq ".Horde.Properties.LogicalCoresOverride = \"${HATHORA_ALLOCATED_CPU_ROUND}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
-  # jq ".Horde.Properties.LogicalCoreRatio = \"2\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
+  jq ".Horde.Properties.LogicalCoresOverride = \"${HATHORA_ALLOCATED_CPU_ROUND}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
+  jq ".Horde.Properties.LogicalCoreRatio = \"2\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
+  jq ".Horde.Properties.AvailableMemoryOverride = \"${HATHORA_ALLOCATED_MEMORY_GB}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
   # end if
-  # jq ".Horde.Properties.AvailableMemoryOverride = \"${HATHORA_ALLOCATED_MEMORY_GB}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
 fi
 
 dotnet HordeAgent.dll SetServer -Name=HordeServer -Url=${HORDE_SERVER_URL} -Default -Token=${HORDE_SERVER_TOKEN}
