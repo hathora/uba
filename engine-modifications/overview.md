@@ -16,18 +16,10 @@ To resolve this, we've already implemented and validated a set of engine modific
 
 ## Applying the modifications
 
-We have provided a [git diff patch file](./base-modifications.patch) based on UE 5.5.4 code which you can apply with:
-
-**Using Git/GitHub:**
+We have provided a [git diff patch file](./base-modifications.patch) based on UE 5.5.4 code. To apply the code, copy the patch file into the root of your UE source and run the associated command from the root of the UE source:
 
 ```
-git apply base-modifications.patch
-```
-
-**Using Perforce:**
-
-```
-patch -p1 base-modifications.patch
+patch -p1 < base-modifications.patch
 ```
 
 ## Appendix
@@ -46,7 +38,7 @@ In addition, a fourth Property is required because the internal listen ports for
 
 #### (2) Supporting Hathora’s internal monitoring tools
 
-Hathora has internal monitoring tools that will attempt to gather metrics from exposed TCP ports. Periodically, Hathora will make an `HTTP GET /metrics`  request on each of the ports to support a future endeavor of capturing OpenTelemetry metrics. The Horde Agent and UBA do not anticipate traffic/protocols, and do not completely handle, other than the expected protocol. When Hathora makes these HTTP requests, it can cause the Horde Agent and UBA to have undefined behavior and cause issues. Engine modifications were put in place to detect, ignore, and close these types of connections. In the future, Hathora may look into a future option to opt-out of these HTTP requests for specific ports.
+Hathora has internal monitoring tools that will attempt to gather metrics from exposed TCP ports. Periodically, Hathora will make an `HTTP GET /metrics` request on each of the ports to support a future endeavor of capturing OpenTelemetry metrics. The Horde Agent and UBA do not anticipate traffic/protocols, and do not completely handle, other than the expected protocol. When Hathora makes these HTTP requests, it can cause the Horde Agent and UBA to have undefined behavior and cause issues. Engine modifications were put in place to detect, ignore, and close these types of connections. In the future, Hathora may look into a future option to opt-out of these HTTP requests for specific ports.
 
 #### (3) Preventing false-positive connections due to Hathora’s TCP proxies
 

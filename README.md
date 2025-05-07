@@ -44,7 +44,7 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
     - Name: `HORDE_UBA_PROXY_LISTEN_PORT`, Value: `6002`
     - Name: `HORDE_POOL_NAME`, Value: `Hathora`
     - Name: `HORDE_SERVER_URL`, Value: URL to your Horde Dashboard (e.g. `https://horde.yourdomain.com`)
-    - Name: `HORDE_SERVER_TOKEN`, Value: Retrieve this value by navigating your browser to `https://horde.yourdomain.com/api/v1/admin/registrationtoken` with an admin user
+    - Name: `HORDE_SERVER_TOKEN`, Value: Retrieve this value by navigating your browser to `horde.yourdomain.com/api/v1/admin/registrationtoken` with an admin user
 1. If you're using bare metal on Hathora to run your UBA fleet, you likely want to disable the Idle Timeout field to prevent agents from continuously being started every 5 minutes.
 
 ### Horde Pool
@@ -102,7 +102,7 @@ UbaEnabled=True
 ; only have UBA run for your CI/CD machines; you'll need to configure those jobs to set
 ; the environment variable.
 Enabled=True
-; optionally add `MaxCores` to the Horde object below (defaults to 500); see `https://horde.yourdomain.com/docs/Tutorials/RemoteShaderCompilation.md` for details
+; optionally add `MaxCores` to the Horde object below (defaults to 500); see `horde.yourdomain.com/docs/Tutorials/RemoteShaderCompilation.md` for details
 ; Pool below should match the `id` field in your `globals.json`
 Horde=(Pool=hathora)
 ; Do not set the Host/Port settings in UbaController; these enable a different mode
@@ -110,7 +110,7 @@ Horde=(Pool=hathora)
 
 #### Authentication
 
-If you're using something other than Horde for your CI/CD, your jobs should pass the `-Unattended` flag to UAT and set the `UE_HORDE_TOKEN` environment variable to the token received at `https://horde.yourdomain.com/api/v1/admin/token`.
+If you're using something other than Horde for your CI/CD, your jobs should pass the `-Unattended` flag to UAT and set the `UE_HORDE_TOKEN` environment variable to the token received at `horde.yourdomain.com/api/v1/admin/token`.
 
 If you're manually running Unreal on your dev machine, Unreal should automatically open the browser to authenticate you to the Horde server.
 

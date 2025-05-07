@@ -14,24 +14,6 @@ echo "Starting and HordeAgent with UBA port ${HATHORA_UBA_PORT}"
 
 pushd HordeAgent
 
-HORDE_SERVER_TOKEN_OVERRIDE=$(echo ${HATHORA_INITIAL_ROOM_CONFIG} | jq -r '.HordeServerToken')
-
-if [ -z "${HORDE_SERVER_TOKEN_OVERRIDE}" ]; then
-  echo "No HordeServerToken override found in HATHORA_INITIAL_ROOM_CONFIG; using default from Hathora environment"
-else
-  echo "HordeServerToken override found in HATHORA_INITIAL_ROOM_CONFIG"
-  HORDE_SERVER_TOKEN=${HORDE_SERVER_TOKEN_OVERRIDE}
-fi
-
-HORDE_POOL_NAME_OVERRIDE=$(echo ${HATHORA_INITIAL_ROOM_CONFIG} | jq -r '.HordePoolName')
-
-if [ -z "${HORDE_POOL_NAME_OVERRIDE}" ]; then
-  echo "No HordePoolName override found in HATHORA_INITIAL_ROOM_CONFIG; using default from Hathora environment"
-else
-  echo "HordePoolName override found in HATHORA_INITIAL_ROOM_CONFIG"
-  HORDE_POOL_NAME=${HORDE_POOL_NAME_OVERRIDE}
-fi
-
 if [ -z "${HATHORA_HOSTNAME}" ]; then
   echo "No HATHORA_HOSTNAME found in environment; using default ComputeIp"
 else
@@ -45,7 +27,7 @@ if [ -n "${COMPUTE_IP_OVERRIDE}" ]; then
   jq ".Horde.ComputeIp = \"${COMPUTE_IP_OVERRIDE}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
 fi
 
-jq ".Horde.Name = \"${HATHORA_INITIAL_ROOM_ID}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
+jq ".Horde.Name = \"HATHORA-${HATHORA_PROCESS_ID}\"" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
 jq ".Horde.ComputePort = ${HORDE_COMPUTE_LISTEN_PORT}" appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
 jq '.Horde.wineExecutablePath = "/usr/bin/uba-wine64.sh"' appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
 jq '.Horde.Ephemeral = true' appsettings.json > appsettings.json.tmp && mv appsettings.json.tmp appsettings.json
