@@ -1,0 +1,279 @@
+diff --git a/Engine/Source/Programs/Horde/Plugins/Build/HordeServer.Build/Agents/Fleet/JobQueueStrategy.cs b/Engine/Source/Programs/Horde/Plugins/Build/HordeServer.Build/Agents/Fleet/JobQueueStrategy.cs
+index 6bf69257cdd6..d1fb17ca5f1d 100644
+--- a/Engine/Source/Programs/Horde/Plugins/Build/HordeServer.Build/Agents/Fleet/JobQueueStrategy.cs
++++ b/Engine/Source/Programs/Horde/Plugins/Build/HordeServer.Build/Agents/Fleet/JobQueueStrategy.cs
+@@ -155,7 +155,7 @@ namespace HordeServer.Agents.Fleet
+ 				_cache.Set(CacheKey, poolQueueSizes, TimeSpan.FromSeconds(60));
+ 			}
+ 
+-			poolQueueSizes.TryGetValue(pool.Id, out int queueSize);
++			poolQueueSizes.TryGetValue(Settings.PoolIdToMonitorQueue == null ? pool.Id : new PoolId(Settings.PoolIdToMonitorQueue), out int queueSize);
+ 
+ 			Dictionary<string, object> status = new()
+ 			{
+diff --git a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/FleetManagerFactory.cs b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/FleetManagerFactory.cs
+index 15ed6812cc78..e23abeceddc0 100644
+--- a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/FleetManagerFactory.cs
++++ b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/FleetManagerFactory.cs
+@@ -78,6 +78,8 @@ public sealed class FleetManagerFactory : IFleetManagerFactory
+ 				new AwsRecyclingFleetManager(GetAwsEc2(type), _agentCollection, _meter, _clock, DeserializeSettings<AwsRecyclingFleetManagerSettings>(config), _tracer, _loggerFactory.CreateLogger<AwsRecyclingFleetManager>()),
+ 			FleetManagerType.AwsAsg =>
+ 				new AwsAsgFleetManager(GetAwsAutoScaling(type), DeserializeSettings<AwsAsgSettings>(config), _tracer, _loggerFactory.CreateLogger<AwsAsgFleetManager>()),
++			FleetManagerType.Hathora =>
++				new HathoraFleetManager(DeserializeSettings<HathoraFleetManagerSettings>(config), _tracer, _loggerFactory.CreateLogger<HathoraFleetManager>()),
+ 			_ => throw new ArgumentException("Unknown fleet manager type " + type)
+ 		};
+ 	}
+diff --git a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/IFleetManager.cs b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/IFleetManager.cs
+index 6951f784aa83..584dd47e3b90 100644
+--- a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/IFleetManager.cs
++++ b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/IFleetManager.cs
+@@ -37,7 +37,12 @@ namespace HordeServer.Agents.Fleet
+ 		/// <summary>
+ 		/// Fleet manager for handling AWS EC2 instances. Uses an EC2 auto-scaling group for controlling the number of running instances.
+ 		/// </summary>
+-		AwsAsg
++		AwsAsg,
++
++		/// <summary>
++		/// Fleet manager for handling Hathora Processes. Will increase/decrease the target headroom for a Hathora app.
++		/// </summary>
++		Hathora,
+ 	}
+ 
+ 	/// <summary>
+diff --git a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/JobQueueSettings.cs b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/JobQueueSettings.cs
+index 7e9d8d2b8002..d0dc127fba53 100644
+--- a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/JobQueueSettings.cs
++++ b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/JobQueueSettings.cs
+@@ -37,6 +37,11 @@ namespace HordeServer.Agents.Fleet
+ 		/// </summary>
+ 		public int ReadyTimeThresholdSec { get; set; } = 45;
+ 
++		/// <summary>
++		/// The PoolId of a queue to monitor for job count; if unset, the current pool will be monitored
++		/// </summary>
++		public string? PoolIdToMonitorQueue { get; set; } = null;
++
+ 		/// <summary>
+ 		/// Constructor used for JSON serialization
+ 		/// </summary>
+diff --git a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/Providers/HathoraFleetManager.cs b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/Providers/HathoraFleetManager.cs
+new file mode 100644
+index 000000000000..d270c85508cc
+--- /dev/null
++++ b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Agents/Fleet/Providers/HathoraFleetManager.cs
+@@ -0,0 +1,213 @@
++// Copyright Hathora Inc. All Rights Reserved.
++
++using System.Buffers.Text;
++using System.Text;
++using System.Text.Json;
++using EpicGames.Horde.Agents.Pools;
++using HordeServer.Agents.Pools;
++using HordeServer.Utilities;
++using Microsoft.Extensions.Logging;
++using OpenTelemetry.Trace;
++using YamlDotNet.Serialization;
++
++namespace HordeServer.Agents.Fleet.Providers;
++
++public class HathoraStaticProcessAllocation
++{
++	public int maxProcesses { get; set; }
++	public int minProcesses { get; set; }
++	public int targetProcesses { get; set; }
++	public string region { get; set; }
++
++	HathoraStaticProcessAllocation()
++	{
++		maxProcesses = 0;
++		minProcesses = 0;
++		targetProcesses = 0;
++		region = string.Empty;
++	}
++}
++
++public class HathoraAppServiceConfig
++{
++	public HathoraStaticProcessAllocation[] staticProcessAllocation { get; set; }
++
++	HathoraAppServiceConfig()
++	{
++		staticProcessAllocation = Array.Empty<HathoraStaticProcessAllocation>();
++	}
++}
++
++public class HathoraApp
++{
++	public HathoraAppServiceConfig serviceConfig { get; set; }
++
++	HathoraApp()
++	{
++		serviceConfig = new HathoraAppServiceConfig();
++	}
++}
++
++/// <summary>
++/// Settings for the Hathora fleet manager
++/// </summary>
++public class HathoraFleetManagerSettings
++{
++	/// <summary>
++	/// Hathora App ID
++	/// </summary>
++	public string AppId { get; }
++
++	/// <summary>
++	/// Hathora Region
++	/// </summary>
++	public string Region { get; }
++
++	/// <summary>
++	/// Hathora API Token environment variable name, defaults to HATHORA_TOKEN
++	/// </summary>
++	public string? ApiTokenEnvVar { get; }
++
++	/// <summary>
++	/// Hathora API Token, takes precedence over environment variable
++	/// </summary>
++	public string? ApiToken { get; }
++
++	/// <summary>
++	/// Constructor
++	/// </summary>
++	public HathoraFleetManagerSettings(string appId, string region, string? apiTokenEnvVar = null, string? apiToken = null)
++	{
++		AppId = appId;
++		Region = region;
++		ApiTokenEnvVar = apiTokenEnvVar;
++		ApiToken = apiToken;
++	}
++}
++
++/// <summary>
++/// Fleet manager for handling Hathora pods.
++/// Will increase/decrease the Target number of Processes for a Hathora App.
++/// </summary>
++public sealed class HathoraFleetManager : IFleetManager, IDisposable
++{
++	private readonly HathoraFleetManagerSettings _settings;
++	private readonly Tracer _tracer;
++	private readonly ILogger _logger;
++
++	private string ApiToken
++	{
++		get
++		{
++			if (!string.IsNullOrEmpty(_settings.ApiToken))
++			{
++				return _settings.ApiToken;
++			}
++
++			return Environment.GetEnvironmentVariable(
++				string.IsNullOrEmpty(_settings.ApiTokenEnvVar) ? "HATHORA_TOKEN" : _settings.ApiTokenEnvVar
++			);
++		}
++	}
++	
++	/// <summary>
++	/// Constructor
++	/// </summary>
++	public HathoraFleetManager(HathoraFleetManagerSettings settings, Tracer tracer, ILogger<HathoraFleetManager> logger)
++	{
++		_settings = settings;
++		_tracer = tracer;
++		_logger = logger;
++	}
++
++	/// <inheritdoc/>
++	public async Task<ScaleResult> ExpandPoolAsync(IPool pool, IReadOnlyList<IAgent> agents, int count, CancellationToken cancellationToken = default)
++	{
++		return await UpdatePoolAsync(pool, agents, count, cancellationToken);
++	}
++
++	/// <inheritdoc/>
++	public async Task<ScaleResult> ShrinkPoolAsync(IPool pool, IReadOnlyList<IAgent> agents, int count, CancellationToken cancellationToken = default)
++	{
++		return await UpdatePoolAsync(pool, agents, -count, cancellationToken);
++	}
++
++	private async Task<ScaleResult> UpdatePoolAsync(IPool pool, IReadOnlyList<IAgent> agents, int count, CancellationToken cancellationToken = default)
++	{
++		_logger.LogInformation("[HathoraFleetManager::UpdatePoolAsync] Change pool {PoolId} by {Count} agents for region {Region}", pool.Id, count, _settings.Region);
++
++		if (string.IsNullOrEmpty(ApiToken))
++		{
++			throw new InvalidOperationException("Hathora API token is not set, cannot update pool size. Did you set the ApiTokenEnvVar or ApiToken settings (latter takes precedence)?");
++		}
++
++		HathoraApp app = await GetHathoraAppAsync(cancellationToken);
++
++		HathoraStaticProcessAllocation? processAllocation = Array.Find(app.serviceConfig.staticProcessAllocation, x => x.region == _settings.Region);
++
++		if (processAllocation == null)
++		{
++			throw new InvalidOperationException($"Hathora app {app} does not have a process allocation for region {_settings.Region}");
++		}
++
++		int currentTargetProcesses = processAllocation.targetProcesses;
++	
++		int newTargetProcesses = processAllocation.targetProcesses + count;
++		if (newTargetProcesses < 0)
++		{
++			newTargetProcesses = 0;
++		}
++		else if (newTargetProcesses < processAllocation.minProcesses)
++		{
++			newTargetProcesses = processAllocation.minProcesses;
++		}
++		else if (newTargetProcesses > processAllocation.maxProcesses)
++		{
++			newTargetProcesses = processAllocation.maxProcesses;
++		}
++		processAllocation.targetProcesses = newTargetProcesses;
++		
++		_logger.LogInformation("[HathoraFleetManager::UpdatePoolAsync] CurrentTarget {CurrentTarget}, NewTarget {NewTarget}", currentTargetProcesses, newTargetProcesses);
++
++		bool success = await UpdateHathoraAppAsync(app, cancellationToken);
++
++		int agentsAdded = success && newTargetProcesses > currentTargetProcesses ? newTargetProcesses - currentTargetProcesses : 0;
++		int agentsRemoved = success && newTargetProcesses < currentTargetProcesses ? currentTargetProcesses - newTargetProcesses : 0;
++
++		return new ScaleResult(success ? FleetManagerOutcome.Success : FleetManagerOutcome.Failure, agentsAdded, agentsRemoved);
++	}
++
++	private async Task<HathoraApp> GetHathoraAppAsync(CancellationToken cancellationToken = default)
++	{
++		string url = $"https://api.hathora.dev/apps/v2/apps/{_settings.AppId}";
++		using HttpClient client = new();
++		client.DefaultRequestHeaders.Add("Authorization", "Bearer " + ApiToken);
++		HttpResponseMessage response = await client.GetAsync(url, cancellationToken);
++		response.EnsureSuccessStatusCode();
++		string json = await response.Content.ReadAsStringAsync(cancellationToken);
++		HathoraApp app = JsonSerializer.Deserialize<HathoraApp>(json);
++		return app;
++	}
++
++	private async Task<bool> UpdateHathoraAppAsync(HathoraApp app, CancellationToken cancellationToken = default)
++	{
++		string url = $"https://api.hathora.dev/apps/v2/apps/{_settings.AppId}";
++		using HttpClient client = new();
++		client.DefaultRequestHeaders.Add("Authorization", "Bearer " + ApiToken);
++		string json = JsonSerializer.Serialize(app);
++		StringContent content = new(json, Encoding.UTF8, "application/json");
++		HttpResponseMessage response = await client.PatchAsync(url, content, cancellationToken);
++		return response.IsSuccessStatusCode;
++	}
++
++	/// <inheritdoc/>
++	public Task<int> GetNumStoppedInstancesAsync(IPoolConfig pool, CancellationToken cancellationToken = default)
++	{
++		// Hathora does not support stopped instances
++		return Task.FromResult(0);
++	}
++
++	public void Dispose()
++	{
++	}
++}
