@@ -74,7 +74,6 @@ index 000000000000..d270c85508cc
 +using HordeServer.Utilities;
 +using Microsoft.Extensions.Logging;
 +using OpenTelemetry.Trace;
-+using YamlDotNet.Serialization;
 +
 +namespace HordeServer.Agents.Fleet.Providers;
 +
@@ -85,7 +84,7 @@ index 000000000000..d270c85508cc
 +	public int targetProcesses { get; set; }
 +	public string region { get; set; }
 +
-+	HathoraStaticProcessAllocation()
++	public HathoraStaticProcessAllocation()
 +	{
 +		maxProcesses = 0;
 +		minProcesses = 0;
@@ -98,7 +97,7 @@ index 000000000000..d270c85508cc
 +{
 +	public HathoraStaticProcessAllocation[] staticProcessAllocation { get; set; }
 +
-+	HathoraAppServiceConfig()
++	public HathoraAppServiceConfig()
 +	{
 +		staticProcessAllocation = Array.Empty<HathoraStaticProcessAllocation>();
 +	}
@@ -108,7 +107,7 @@ index 000000000000..d270c85508cc
 +{
 +	public HathoraAppServiceConfig serviceConfig { get; set; }
 +
-+	HathoraApp()
++	public HathoraApp()
 +	{
 +		serviceConfig = new HathoraAppServiceConfig();
 +	}
