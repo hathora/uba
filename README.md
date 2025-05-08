@@ -45,7 +45,7 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
     - Name: `HORDE_POOL_NAME`, Value: `Hathora`
     - Name: `HORDE_SERVER_URL`, Value: URL to your Horde Dashboard (e.g. `https://horde.yourdomain.com`)
     - Name: `HORDE_SERVER_TOKEN`, Value: Retrieve this value by navigating your browser to `horde.yourdomain.com/api/v1/admin/registrationtoken` with an admin user
-1. If you're using bare metal on Hathora to run your UBA fleet, you likely want to disable the Idle Timeout field to prevent agents from continuously being started every 5 minutes.
+1. If you're using bare metal on Hathora to run your UBA fleet, you can disable the Idle Timeout field to prevent agents from continuously restarting every 5 minutes.
 
 ### Horde Pool
 
