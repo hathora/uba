@@ -34,7 +34,7 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
     - The Hathora team may need to increase your app's maximum memory per process limit (32GB by default)
     - After that, you can run a POST request for the [`CreateDeployment`](https://hathora.dev/api#tag/DeploymentsV3/operation/CreateDeployment) API call to manually set the proper ratio. Normally we would create a deployment with the default ratio, then use the `GetDeployments` call to get the build ID to then run `CreateDeployment` with just the `requestedMemoryMB` field increased.
 1. Keep the Number of Rooms Per Process set to `1`.
-1. When you get to the Transport config, you need to set up these ports. You can other port numbers (except `7000-7010`) if you need, but make sure you update the environment variables in the next step accordingly:
+1. When you get to the Transport config, you need to set up these ports. You can use other port numbers (except `7000-7010`) if you need, but make sure you update the environment variables in the next step accordingly:
     - Port: `6000`, Transport Type: `TCP`, Name: `default`
     - Port: `6001`, Transport Type: `TCP`, Name: `uba`
     - Port: `6002`, Transport Type: `TCP`, Name: `proxy`
