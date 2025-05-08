@@ -13,7 +13,7 @@ To use UBA on Hathora, you need the following:
 - Using Unreal Engine 5.5.0 or greater
 - A Horde Server instance (you do not need to be using the CI/Automation Jobs in Horde to use UBA on Hathora)
 	> [!NOTE]
-	> Your Horde Server needs to be publicly accessible; please reach out to the Hathora team if your Horde Server is behind a VPN
+	> Your Horde Server needs to be publicly accessible; please reach out 	to the Hathora team if your Horde Server is behind a VPN
 
 ## Setup
 
