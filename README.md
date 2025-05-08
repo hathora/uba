@@ -12,7 +12,8 @@ This repository is everything you need to get started using UBA on Hathora.
 To use UBA on Hathora, you need the following:
 - Using Unreal Engine 5.5.0 or greater
 - A Horde Server instance (you do not need to be using the CI/Automation Jobs in Horde to use UBA on Hathora)
-    - **NOTE:** Your Horde Server needs to be publicly accessible; please reach out to the Hathora team if your Horde Server is behind a VPN
+> [!NOTE]
+> Your Horde Server needs to be publicly accessible; please reach out to the Hathora team if your Horde Server is behind a VPN
 
 ## Setup
 
@@ -35,7 +36,7 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
     - The Hathora team may need to increase your app's maximum memory per process limit (32GB by default)
     - After that, you can run a POST request for the [`CreateDeployment`](https://hathora.dev/api#tag/DeploymentsV3/operation/CreateDeployment) API call to manually set the proper ratio. Normally we would create a deployment with the default ratio, then use the `GetDeployments` call to get the build ID to then run `CreateDeployment` with just the `requestedMemoryMB` field increased.
 1. Keep the Number of Rooms Per Process set to `1`.
-1. When you get to the Transport config, you need to set up these ports. You can other port numbers (except `7000-7010`) if you need, but make sure you update the environment variables in the next step accordingly:
+1. When you get to the Transport config, you need to set up these ports. You can use other port numbers (except `7000-7010`) if you need, but make sure you update the environment variables in the next step accordingly:
     - Port: `6000`, Transport Type: `TCP`, Name: `default`
     - Port: `6001`, Transport Type: `TCP`, Name: `uba`
     - Port: `6002`, Transport Type: `TCP`, Name: `proxy`
@@ -46,15 +47,16 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
     - Name: `HORDE_POOL_NAME`, Value: `Hathora`
     - Name: `HORDE_SERVER_URL`, Value: URL to your Horde Dashboard (e.g. `https://horde.yourdomain.com`)
     - Name: `HORDE_SERVER_TOKEN`, Value: Retrieve this value by navigating your browser to `horde.yourdomain.com/api/v1/admin/registrationtoken` with an admin user
-1. If you're using Hathora's bare metal or have [autoscaling](#horde-autoscaling) set up, you likely want to disable the Idle Timeout field to prevent agents from continuously being started every 5 minutes.
+> [!TIP]
+> If you have bare metal on Hathora or have [autoscaling](#horde-autoscaling) set up, you can disable the Idle Timeout field to prevent agents from continuously restarting every 5 minutes.
 
 ### Horde Pool
 
 You need to add a node pool in Horde for the Hathora agents to associate with. This is done by modifying your Horde Server's `globals.json`
 
-**Windows location:** `C:\ProgramData\Epic\Horde\Server\globals.json`
-**Linux/macOS location:** In the `Data` folder under the application directory
-**Docker location:** `/app/Data/globals.json` (you likely have a volume set up that maps `/app/Data` to a local directory outside of Docker)
+- **Windows location:** `C:\ProgramData\Epic\Horde\Server\globals.json`
+- **Linux/macOS location:** In the `Data` folder under the application directory
+- **Docker location:** `/app/Data/globals.json` (you likely have a volume set up that maps `/app/Data` to a local directory outside of Docker)
 
 Apply a manual merge to add an element to the `Plugins.Compute.Pools` JSON array:
 
