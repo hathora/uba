@@ -51,9 +51,9 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
 
 You need to add a node pool in Horde for the Hathora agents to associate with. This is done by modifying your Horde Server's `globals.json`
 
-**Windows location:** `C:\ProgramData\Epic\Horde\Server\globals.json`
-**Linux/macOS location:** In the `Data` folder under the application directory
-**Docker location:** `/app/Data/globals.json` (you likely have a volume set up that maps `/app/Data` to a local directory outside of Docker)
+- **Windows location:** `C:\ProgramData\Epic\Horde\Server\globals.json`
+- **Linux/macOS location:** In the `Data` folder under the application directory
+- **Docker location:** `/app/Data/globals.json` (you likely have a volume set up that maps `/app/Data` to a local directory outside of Docker)
 
 Apply a manual merge to add an element to the `Plugins.Compute.Pools` JSON array:
 
