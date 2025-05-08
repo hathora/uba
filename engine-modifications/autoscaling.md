@@ -32,7 +32,7 @@ Both methods are defined in your `globals.json` Horde Server file (see [the root
 1. Go to your Hathora Application Settings page, scroll to the bottom to find Static Process Allocation, click Expand
 1. For the region(s) you'd like to support, set the Min/Max processes. You can leave Target processes at 0
 
-``` json
+``` jsonc
 {
 	"Plugins": {
 		"Compute": {
@@ -83,7 +83,7 @@ Some things you should consider:
 - You can have multiple Hathora Apps share from the same Hathora Fleet and they can share the same Build for the Deployment, so you can hypothetically have a C++ UBA App and a Cooking UBA App that scale differently based on different C++ and Cooking pools
 - Both the C++ and Cooking UBA handlers can be configured with a Max Core (`576` and `500` are the Epic-defined defaults, respectively) if you want increase it for heavy workloads or decrease it to ensure the UBA pool is spread over multiple running jobs. See `Engine/Source/Programs/UnrealBuildTool/Executors/UnrealBuildAccelerator/UnrealBuildAcceleratorHordeConfig.cs` and `horde.yourdomain.com/docs/Tutorials/RemoteShaderCompilation.md` respectively for details.
 
-``` json
+``` jsonc
 {
 	"Plugins": {
 		"Compute": {
@@ -128,7 +128,7 @@ Some things you should consider:
 
 `LeaseUtilization` samples the average CPU load across agents and scales accordingly. You can find the available settings at to put in `LeaseUtilizationSettings` at `horde.yourdomain.com/docs/Config/Schema/Globals.md#leaseutilizationsettings`. Using `LeaseUtilization` is an option, but it's less accurate as you don't know how many pending jobs there are and whether or not agents need to be warm.
 
-``` json
+``` jsonc
 {
 	"Plugins": {
 		"Compute": {

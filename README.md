@@ -31,6 +31,7 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
 1. [Create a separate application](https://hathora.dev/docs/guides/deploy-hathora#create-an-application); the name doesn't matter
 1. Using the tarball generated in the prior section (e.g. `hathora-uba.tar.gz`), start following the steps to [deploy a server build](https://hathora.dev/docs/guides/deploy-hathora#deploy-a-server-build).
 1. When you get to the CPU/Memory profile, use at least 8 vCPU / 16 GB RAM, but 16 vCPU is the recommended minimum Process Size. If you need 1:4 CPU/RAM ratio or more vCPU than is available in the dashboard, please reach out to the Hathora team for support.
+    - By default, you will be limited to 4 vCPU; please reach out ot the Hathora team to have this limit increased
     - The Hathora team may need to increase your app's maximum memory per process limit (32GB by default)
     - After that, you can run a POST request for the [`CreateDeployment`](https://hathora.dev/api#tag/DeploymentsV3/operation/CreateDeployment) API call to manually set the proper ratio. Normally we would create a deployment with the default ratio, then use the `GetDeployments` call to get the build ID to then run `CreateDeployment` with just the `requestedMemoryMB` field increased.
 1. Keep the Number of Rooms Per Process set to `1`.
@@ -45,7 +46,7 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
     - Name: `HORDE_POOL_NAME`, Value: `Hathora`
     - Name: `HORDE_SERVER_URL`, Value: URL to your Horde Dashboard (e.g. `https://horde.yourdomain.com`)
     - Name: `HORDE_SERVER_TOKEN`, Value: Retrieve this value by navigating your browser to `horde.yourdomain.com/api/v1/admin/registrationtoken` with an admin user
-1. If you're using bare metal on Hathora to run your UBA fleet, you likely want to disable the Idle Timeout field to prevent agents from continuously being started every 5 minutes.
+1. If you're using Hathora's bare metal or have [autoscaling](#horde-autoscaling) set up, you likely want to disable the Idle Timeout field to prevent agents from continuously being started every 5 minutes.
 
 ### Horde Pool
 

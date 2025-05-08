@@ -16,7 +16,7 @@ If you're rebuilding the Horde Server (only required for autoscaling support), t
 
 ### If you're not rebuilding the Horde Server
 
-1. Make sure you followed the steps to apply the [base engine modifications](./overview.md)
+1. Make sure you followed the steps to apply the [base engine modifications](../engine-modifications/overview.md)
 1. Go to your Horde Server dashboard
 1. Under `Help` in the top right, click `Version`
 1. Copy the version of the `Agent` (if you don't see it, use the version for `Server`, they should be the same anyway)
