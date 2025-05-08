@@ -12,7 +12,8 @@ This repository is everything you need to get started using UBA on Hathora.
 To use UBA on Hathora, you need the following:
 - Using Unreal Engine 5.5.0 or greater
 - A Horde Server instance (you do not need to be using the CI/Automation Jobs in Horde to use UBA on Hathora)
-	- **Note**: Your Horde Server needs to be publicly accessible; please reach out to the Hathora team if your Horde Server is behind a VPN
+> [!NOTE]
+> Your Horde Server needs to be publicly accessible; please reach out to the Hathora team if your Horde Server is behind a VPN
 
 ## Setup
 
@@ -46,7 +47,7 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
     - Name: `HORDE_SERVER_URL`, Value: URL to your Horde Dashboard (e.g. `https://horde.yourdomain.com`)
     - Name: `HORDE_SERVER_TOKEN`, Value: Retrieve this value by navigating your browser to `horde.yourdomain.com/api/v1/admin/registrationtoken` with an admin user
 > [!TIP]
-> If you're using bare metal on Hathora to run your UBA fleet, you can disable the Idle Timeout field to prevent agents from continuously restarting every 5 minutes.
+> If you have bare metal on Hathora to run your UBA fleet, you can disable the Idle Timeout field to prevent agents from continuously restarting every 5 minutes.
 
 ### Horde Pool
 
