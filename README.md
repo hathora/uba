@@ -82,7 +82,8 @@ Apply a manual merge to add an element to the `Plugins.Compute.Pools` JSON array
 }
 ```
 
-Note you can change the `id`, `name`, and `Color` fields above, but the `condition` field's `'Hathora'` should not be changed as it needs to match the `HORDE_POOL_NAME` environment variable we set to `Hathora` above.
+> [!NOTE]
+> You can change the `id`, `name`, and `Color` fields above, but the `condition` field's `'Hathora'` should not be changed as it needs to match the `HORDE_POOL_NAME` environment variable we set to `Hathora` above.
 
 ### Unreal Project Configuration
 
