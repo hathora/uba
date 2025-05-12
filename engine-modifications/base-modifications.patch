@@ -311,24 +311,6 @@ index 365c412129d6..cc66e8bfceb7 100644
  					}
  				}
 
-diff --git a/Engine/Source/Programs/Horde/HordeAgent/Services/ComputeListenerService.cs b/Engine/Source/Programs/Horde/HordeAgent/Services/ComputeListenerService.cs
-index 9ac33c5b2064..9a4e97b3da1d 100644
---- a/Engine/Source/Programs/Horde/HordeAgent/Services/ComputeListenerService.cs
-+++ b/Engine/Source/Programs/Horde/HordeAgent/Services/ComputeListenerService.cs
-@@ -176,6 +176,13 @@ namespace HordeAgent.Services
- 					return;
- 				}
-
-+				string utfString = System.Text.Encoding.UTF8.GetString(nonceBuffer);
-+				if (utfString.Contains("/metrics", StringComparison.OrdinalIgnoreCase))
-+				{
-+					_logger.LogInformation("Metrics request received from Hathora platform {Remote}; safely ignoring this and closing connection.", tcpClient.Client.RemoteEndPoint);
-+					return;
-+				}
-+
- 				ByteString nonce = new ByteString(nonceBuffer);
- 				_logger.LogInformation("Incoming connection with nonce {Nonce}", nonce);
-
 diff --git a/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs b/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
 index 6e77c03d1c73..4fd281d8727c 100644
 --- a/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
@@ -364,30 +346,6 @@ index 6e77c03d1c73..4fd281d8727c 100644
  						break;
 
  					case ConnectionMode.Tunnel when !String.IsNullOrEmpty(response.ConnectionAddress):
-diff --git a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaNetworkClient.cpp b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaNetworkClient.cpp
-index 8aaa18cfa445..19a39f9fc58c 100644
---- a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaNetworkClient.cpp
-+++ b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaNetworkClient.cpp
-@@ -95,6 +95,9 @@ namespace uba
- 				rc.error = *headerData;
- 				Guid serverUid = *(Guid*)(headerData+1);
-
-+				if (strstr((char *)headerData, "/metrics") != nullptr)
-+					rc.error = 10;
-+
- 				if (!rc.error)
- 				{
- 					SCOPED_WRITE_LOCK(rc.client.m_serverUidLock, lock);
-@@ -145,6 +148,9 @@ namespace uba
- 		if (!rc.recvEvent.IsSet(~0u)) // This can not happen. Since both callbacks are using rc we can't leave this function until we know we are not in the callbacks
- 			return m_logger.Error(TC("Timed out waiting for connection response from server"));
-
-+		if (rc.error == 10)
-+			return m_logger.Error(TC("Received connection from Hathora Envoy metrics"));
-+
- 		m_isOrWasConnected.Set();
-
- 		if (rc.error == 1) // Bad version
 diff --git a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
 index 1dadd1611705..002c9a2e4ed8 100644
 --- a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
