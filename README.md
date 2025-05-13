@@ -19,11 +19,11 @@ To use UBA on Hathora, you need the following:
 
 ### Engine Modifications
 
-Several Unreal Engine modifications are necessary to support UBA on Hathora. You can find a detailed instructions and explanations in [./engine-modifications/overview.md](./engine-modifications/overview.md).
+Several Unreal Engine modifications are necessary to support UBA on Hathora. You can find a detailed instructions and explanations in [./engine-modifications/README.md](./engine-modifications/README.md).
 
 ### Creating the image to upload to Hathora
 
-To leverage UBA on Hathora, [Wine](https://www.winehq.org/) is needed to run the Horde Agent (and UBA) on Hathora's Linux containers. We've prepared a `Dockerfile` and supporting scripts to facilitate this; follow the instructions at [./hathora-build/overview.md](./hathora-build/overview.md).
+To leverage UBA on Hathora, [Wine](https://www.winehq.org/) is needed to run the Horde Agent (and UBA) on Hathora's Linux containers. We've prepared a `Dockerfile` and supporting scripts to facilitate this; follow the instructions at [./hathora-build/README.md](./hathora-build/README.md).
 
 ### Hathora Application
 

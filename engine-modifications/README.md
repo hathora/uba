@@ -1,6 +1,6 @@
 # Base engine modifications
 
-You'll need to make some engine modifications (even if you're using one of our [prebuilt horde agent images](../hathora-build/overview.md#using-prebuilt-images)) to use UBA on Hathora.
+You'll need to make some engine modifications (even if you're using one of our [prebuilt horde agent images](../hathora-build/README.md#using-prebuilt-images)) to use UBA on Hathora.
 
 ## Why are modifications necessary?
 
