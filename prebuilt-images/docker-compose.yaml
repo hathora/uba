@@ -1,0 +1,65 @@
+services:
+  horde-server:
+    container_name: horde-server
+    image: ghcr.io/epicgames/horde-server:5.4.0
+    pull_policy: never
+    restart: always
+    depends_on:
+      - redis
+      - mongodb
+    environment:
+      # Horde uses standard configuration from ASP.NET, allowing values to be set through env vars and files.
+      # See https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/
+      # To configure via config file, see the mounted directory and file ./data/server.json.
+      # The env vars below are set as they're configured through Docker Compose
+      Horde__HttpPort: 13340
+      Horde__Http2Port: 13342
+      Horde__RedisConnectionConfig: redis:6379
+      Horde__DatabaseConnectionString: mongodb://horde:ijkdopaijsdfpoijasdf@mongodb:27017/Horde?authSource=admin
+    ports:
+      - 13340:13340 # HTTP/1
+      - 13342:13342 # HTTP/2
+    volumes:
+      - ./data/horde:/app/Data
+    networks:
+      - horde
+
+  mongodb:
+    image: mongo:7.0.5-jammy
+    restart: always
+    environment:
+      # Default username and password, change these!
+      MONGO_INITDB_ROOT_USERNAME: horde
+      MONGO_INITDB_ROOT_PASSWORD: ijkdopaijsdfpoijasdf
+    command: --quiet --logpath /dev/null
+    networks:
+      - horde
+    volumes:
+      - mongodb:/data/db
+
+  redis:
+    container_name: redis
+    image: redis
+    command: redis-server --save 60 1 --loglevel warning
+    networks:
+      - horde
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - redis:/data
+
+networks:
+  horde:
+    name: horde
+
+volumes:
+  mongodb:
+    driver: local
+  redis:
+    driver: local
