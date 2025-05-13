@@ -1,0 +1,44 @@
+name: Publish Prebuilt Docker Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Docker image tag
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy Prebuilt Image
+        working-directory: hathora-build
+        run: |
+          tar -xzf ../prebuilt-images/versions/HordeAgent-${{ inputs.tag}}.tar.gz
+          mv HordeAgent-${{ inputs.tag }} HordeAgent
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./hathora-build
+          push: true
+          tags: ghcr.io/hathora/uba:${{ inputs.tag }}
