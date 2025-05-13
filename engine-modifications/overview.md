@@ -21,6 +21,36 @@ We have provided a [git diff patch file](./base-modifications.patch) based on UE
 patch -p1 < base-modifications.patch
 ```
 
+## Updating UBA Binaries
+
+`UbaAgent` and `UbaHost` binaries need to be regenerated with the modified code. These are populated from Epic's CDN after running `Setup.bat` for UE source builds, and they are typically committed to version control.
+
+You can see the outputs in `Engine/Binaries/Win64/UnrealBuildAccelerator/x64`; we're interested in `UbaAgent.exe`, `UbaHost.*`.
+
+You can build these yourself, but we have also provided prebuilt binaries you can replace yours with. If you're using UE from the Epic Games Launcher rather than a source build, you can simply paste these into those directories, but note they will be overwritten on updates and need to be replaced again.
+
+### Using our Prebuilt UBA Binaries
+
+1. Go to the [latest release](https://github.com/hathora/uba/releases/latest) and find the corresponding `UbaHathoraBinaries-Version.zip`.
+1. Download and extract the files
+1. Copy the extracted files and replace the ones in `Engine/Binaries/Win64/UnrealBuildAccelerator/x64`
+1. If you're distributing your engine to your team, check these version control; otherwise these steps need to be repeated for all build machines
+
+> [!TIP]
+> We will provide a 5.6 image once 5.6.0 is fully released.
+
+### Building UBA Binaries Manually
+
+You can build these binaries yourself with the below commands:
+
+```
+Engine\Build\BatchFiles\Build.bat UbaHost Win64 Development
+```
+
+```
+Engine\Build\BatchFiles\Build.bat UbaAgent Win64 Development
+```
+
 ## Appendix
 
 ### Changes needed to the Engine and why
