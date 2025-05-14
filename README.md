@@ -112,11 +112,31 @@ Horde=(Pool=hathora)
 ; Do not set the Host/Port settings in UbaController; these enable a different mode
 ```
 
+You also need to enable the UBA Executor. This can be done by supplying the `-UBA` CLI flag in CI jobs or by adding the config variable in your `Engine/Saved/UnrealBuildTool/BuildConfiguration.xml` or `%APPDATA%/Unreal Engine/UnrealBuildTool/BuildConfiguration.xml` file:
+
+``` xml
+<?xml version="1.0" encoding="utf-8" ?>
+<Configuration xmlns="https://www.unrealengine.com/BuildConfiguration">
+  <BuildConfiguration>
+    <bAllowUBAExecutor>true</bAllowUBAExecutor>
+  </BuildConfiguration>
+</Configuration>
+```
+
 #### Authentication
 
 If you're using something other than Horde for your CI/CD, your jobs should pass the `-Unattended` flag to UAT and set the `UE_HORDE_TOKEN` environment variable to the token received at `horde.yourdomain.com/api/v1/admin/token`.
 
-If you're manually running Unreal on your dev machine, Unreal should automatically open the browser to authenticate you to the Horde server.
+If you're manually running Unreal on your dev machine, Unreal might automatically open the browser authenticate you, but we've had issues with this in the past. You can set the token retrieved at the above URL in your `Engine/Saved/UnrealBuildTool/BuildConfiguration.xml` or `%APPDATA%/Unreal Engine/UnrealBuildTool/BuildConfiguration.xml` file:
+
+``` xml
+<?xml version="1.0" encoding="utf-8" ?>
+<Configuration xmlns="https://www.unrealengine.com/BuildConfiguration">
+  <Horde>
+    <Token>TOKEN_HERE</Token>
+  </Horde>
+</Configuration>
+```
 
 ### Horde Autoscaling
 
