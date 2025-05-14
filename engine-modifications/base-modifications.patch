@@ -456,3 +456,13 @@ index 4fce6e076e21..aba1f52ec932 100644
  				string exeName = OperatingSystem.IsWindows() ? "UbaAgent.exe" : "UbaAgent";
  				BlobLocator locator = _ubaAgentLocator;
  				Worker worker = new()
+@@ -551,6 +580,9 @@ namespace UnrealBuildTool
+ 							arguments.Add("-Log");
+ 						}
+ 
++						arguments.Add($"-MaxCPU=%UE_HORDE_CPU_COUNT%");
++						arguments.Add($"-MaxWorkers=64");
++
+ 						LogLevel logLevel = _owner.UBAConfig.bDetailedLog ? LogLevel.Information : LogLevel.Debug;
+ 
+ 						logger.Log(logLevel, "Executing child process: {Executable} {Arguments}", executable, CommandLineArguments.Join(arguments));
