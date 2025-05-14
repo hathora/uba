@@ -34,7 +34,7 @@ You can build these yourself, but we have also provided prebuilt binaries you ca
 1. Go to the [latest release](https://github.com/hathora/uba/releases/latest) and find the corresponding `UbaHathoraBinaries-Version.zip`.
 1. Download and extract the files
 1. Copy the extracted files and replace the ones in `Engine/Binaries/Win64/UnrealBuildAccelerator/x64`
-1. If you're distributing your engine to your team, check these version control; otherwise these steps need to be repeated for all build machines
+1. If you're distributing your engine to your team, commit these into version control; otherwise these steps need to be repeated for all build machines
 
 > [!TIP]
 > We will provide a 5.6 image once 5.6.0 is fully released.
