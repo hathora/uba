@@ -15,10 +15,16 @@ To resolve this, we've already implemented and validated a set of engine modific
 
 ## Applying the modifications
 
-We have provided a [git diff patch file](./base-modifications.patch) based on UE 5.5.4 code. To apply the code, copy the patch file into the root of your UE source and run the associated command from the root of the UE source:
+We have provided a git diff patch files for both [UE 5.5.4 (though earlier 5.5 versions may also be compatible)](./base-modifications-5.5.patch) and [UE 5.6.0](./base-modifications-5.6.patch). To apply the code, copy the patch file into the root of your UE source and run the associated command from the root of the UE source:
 
 ```
-patch -p1 < base-modifications.patch
+patch -p1 < base-modifications-5.5.patch
+```
+
+**or**
+
+```
+patch -p1 < base-modifications-5.6.patch
 ```
 
 ## Updating UBA Binaries

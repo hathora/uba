@@ -1,0 +1,265 @@
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.cpp b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.cpp
+index 3f87933b8cce..3faf09822499 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.cpp
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.cpp
+@@ -224,6 +224,60 @@ bool FUbaHordeAgent::IsValid()
+ 	return bIsValid && !bHasErrors;
+ }
+ 
++bool FUbaHordeAgent::PollForListeningOn()
++{
++	EAgentMessageType Type = EAgentMessageType::None;
++	constexpr int32 ReadresponseTimeoutMS = 100;
++	while ((Type = ChildChannel->ReadResponse(ReadresponseTimeoutMS)) != EAgentMessageType::None)
++	{
++		switch (Type)
++		{
++		case EAgentMessageType::ExecuteOutput:
++		{
++			if (ChildChannel->GetResponseSize() > 0)
++			{
++				// Convert raw buffer to dynamic array for modification
++				const ANSICHAR* ResponseDataRaw = reinterpret_cast<const ANSICHAR*>(ChildChannel->GetResponseData());
++				TArray<ANSICHAR> ResponseData(ResponseDataRaw, ChildChannel->GetResponseSize());
++				// Remove trailing newline characters and add NUL-terminator
++				while (ResponseData.Num() > 0 && (ResponseData.Last() == '\n' || ResponseData.Last() == '\r'))
++				{
++					ResponseData.Pop(EAllowShrinking::No);
++				}
++				ResponseData.Add('\0');
++				FString ResponseString(ANSI_TO_TCHAR(ResponseData.GetData()), ResponseData.Num());
++				UE_LOG(LogUbaHordeAgent, Log, TEXT("Response [ExecuteOutput]: %s"), *ResponseString);
++				if (ResponseString.Contains(TEXT("Listening on")))
++				{
++					return true;
++				}
++			}
++		}
++		break;
++		case EAgentMessageType::ExecuteResult:
++		{
++			if (ChildChannel->GetResponseSize() == sizeof(int32))
++			{
++				const int32* ResponseData = reinterpret_cast<const int32*>(ChildChannel->GetResponseData());
++				const int32 ExecuteExitCode = ResponseData[0];
++				UE_LOG(LogUbaHorde, Log, TEXT("Response [ExecuteResult]: ExitCode=%d"), ExecuteExitCode);
++				bIsValid = false;
++			}
++		}
++		break;
++		case EAgentMessageType::Exception:
++		{
++			AgentMessage::FException Ex;
++			ChildChannel->ReadException(Ex);
++			UE_LOG(LogUbaHorde, Log, TEXT("EXCEPTION Message: %s"), *FString(Ex.Message));
++			UE_LOG(LogUbaHorde, Log, TEXT("EXCEPTION Description: %s"), *FString(Ex.Description));
++		}
++		break;
++		}
++	}
++	return false;
++}
++
+ void FUbaHordeAgent::Poll(bool LogReports)
+ {
+ 	EAgentMessageType Type = EAgentMessageType::None;
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.h b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.h
+index 1b4ae861a9a4..23057675e387 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.h
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgent.h
+@@ -30,6 +30,8 @@ public:
+ 
+ 	bool IsValid();
+ 
++	bool PollForListeningOn();
++
+ 	// Reads output from the child channel and reports them to the log of the calling process.
+ 	void Poll(bool LogReports);
+ 
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp
+index b24d8cf87fc1..32c6b5057e4b 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp
+@@ -482,6 +482,11 @@ void FUbaHordeAgentManager::ThreadAgent(FHordeAgentWrapper& Wrapper)
+ 		UbaAgentArgs.AddRaw("-Eventfile=%UE_HORDE_TERMINATION_SIGNAL_FILE%");
+ 		UbaAgentArgs.Add(FAnsiString::Printf("-Description=%s", TCHAR_TO_ANSI(*Agent->GetMachineInfo().LeaseLink)));
+ 
++		UbaAgentArgs.AddRaw("-MaxCpu=%UE_HORDE_CPU_COUNT%");
++		UbaAgentArgs.AddRaw("-MulCpu=%UE_HORDE_CPU_MULTIPLIER%");
++		UbaAgentArgs.AddRaw("-MaxCon=8");
++		UbaAgentArgs.AddRaw("-MaxWorkers=64");
++
+ 		UbaAgentArgs.Finalize();
+ 
+ 		// If the machine does not run Windows, enable the compatibility layer Wine to run UbaAgent.exe on POSIX systems
+@@ -518,18 +523,21 @@ void FUbaHordeAgentManager::ThreadAgent(FHordeAgentWrapper& Wrapper)
+ 
+ 	ON_SCOPE_EXIT{ EstimatedCoreCount -= MachineCoreCount; ActiveCoreCount -= MachineCoreCount; --AgentsActive; UpdateStatus(nullptr); };
+ 
+-	uint32 callCounter = 0; // TODO: This should react on the listen string instead of waiting for two text messages :)
+-
++	bool bReceivedListeningOn = false;
+ 	while (Agent->IsValid() && !ShouldExit.Wait(100))
+ 	{
+-		Agent->Poll(UbaCoordinatorHordeModule::bHordeForwardAgentLogs);
++		bool bInitiateConnection = false;
++		if (bReceivedListeningOn)
++			Agent->Poll(UbaCoordinatorHordeModule::bHordeForwardAgentLogs);
++		else
++			bInitiateConnection = Agent->PollForListeningOn();
+ 
+ 		if (!bUseListen)
+ 		{
+ 			continue;
+ 		}
+ 
+-		if (callCounter++ == 2)
++		if (bInitiateConnection)
+ 		{
+ 			FString CryptoNonce16;
+ 			if (Agent->GetMachineInfo().Encryption != EUbaHordeEncryption::None)
+diff --git a/Engine/Source/Programs/Horde/Docs/Deployment/AgentSettings.md b/Engine/Source/Programs/Horde/Docs/Deployment/AgentSettings.md
+index 1fe5f04f4557..dd4397894b0a 100644
+--- a/Engine/Source/Programs/Horde/Docs/Deployment/AgentSettings.md
++++ b/Engine/Source/Programs/Horde/Docs/Deployment/AgentSettings.md
+@@ -29,6 +29,7 @@ Name | Description
+ `bundleCacheSize` | `integer`<br>Maximum size of the bundle cache, in megabytes.
+ `cpuCount` | `integer`<br>Maximum number of logical CPU cores workloads should use Currently this is only provided as a hint and requires leases to respect this value as it's set via an env variable (UE_HORDE_CPU_COUNT).
+ `cpuMultiplier` | `number`<br>CPU core multiplier applied to CPU core count setting For example, 32 CPU cores and a multiplier of 0.5 results in max 16 CPU usage.
++`ramGb` | `integer`<br>Maximum available RAM in gigabytes.
+ `properties` | `string` `->` `string`<br>Key/value properties in addition to those set internally by the agent
+ `adminEndpoints` | `string[]`<br>Listen addresses for the built-in HTTP admin/management server. Disabled when empty. If activated, it's recommended to bind only to localhost for security reasons. Example: localhost:7008 to listen on localhost, port 7008
+ `healthCheckEndpoints` | `string[]`<br>Listen addresses for the built-in HTTP health check server. Disabled when empty. If activated, it's recommended to bind only to localhost for security reasons. Example: *:7009 to listen on all interfaces/IPs, port 7009 If all interfaces are bound with *, make sure to run process as administrator.
+diff --git a/Engine/Source/Programs/Horde/HordeAgent/AgentSettings.cs b/Engine/Source/Programs/Horde/HordeAgent/AgentSettings.cs
+index b86676675323..dd3516be820e 100644
+--- a/Engine/Source/Programs/Horde/HordeAgent/AgentSettings.cs
++++ b/Engine/Source/Programs/Horde/HordeAgent/AgentSettings.cs
+@@ -248,6 +248,11 @@ namespace HordeAgent
+ 		/// </summary>
+ 		public double CpuMultiplier { get; set; } = 1.0;
+ 
++		/// <summary>
++		/// Maximum available RAM in gigabytes.
++		/// </summary>
++		public int? RamGb { get; set; } = null;
++
+ 		/// <summary>
+ 		/// Key/value properties in addition to those set internally by the agent
+ 		/// </summary>
+diff --git a/Engine/Source/Programs/Horde/HordeAgent/Services/CapabilitiesService.cs b/Engine/Source/Programs/Horde/HordeAgent/Services/CapabilitiesService.cs
+index 179a243f87be..68428c298e51 100644
+--- a/Engine/Source/Programs/Horde/HordeAgent/Services/CapabilitiesService.cs
++++ b/Engine/Source/Programs/Horde/HordeAgent/Services/CapabilitiesService.cs
+@@ -205,8 +205,7 @@ namespace HordeAgent.Services
+ 					{
+ 						long totalCapacity = Int64.Parse(match.Groups[1].Value) * 1024;
+ 						int ramGb = (int)(totalCapacity / (1024 * 1024 * 1024));
+-						capabilities.Resources.Add(KnownResourceNames.Ram, ramGb);
+-						capabilities.Properties.Add($"{KnownResourceNames.Ram}={ramGb}");
++						AddMemInfo(_settings.CurrentValue, capabilities, ramGb);
+ 					}
+ 				}
+ 
+@@ -299,8 +298,7 @@ namespace HordeAgent.Services
+ 						string[] parts = memoryNode.InnerText.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+ 						if (parts.Length == 2 && parts[1] == "GB" && Int32.TryParse(parts[0], out int ramGb))
+ 						{
+-							capabilities.Resources.Add(KnownResourceNames.Ram, ramGb);
+-							capabilities.Properties.Add($"{KnownResourceNames.Ram}={ramGb}");
++							AddMemInfo(_settings.CurrentValue, capabilities, ramGb);
+ 						}
+ 					}
+ 				}
+@@ -510,6 +508,14 @@ namespace HordeAgent.Services
+ 				capabilities.Properties.Add($"{KnownResourceNames.PhysicalCores}={numPhysicalCores}");
+ 			}
+ 		}
++ 
++		public static void AddMemInfo(AgentSettings settings, RpcAgentCapabilities capabilities, int ramGb)
++		{
++			// Agent settings can artificially limit available RAM
++			int adjustedRamGb = settings.RamGb is > 0 ? settings.RamGb.Value : ramGb;
++			capabilities.Resources.Add(KnownResourceNames.Ram, adjustedRamGb);
++			capabilities.Properties.Add($"{KnownResourceNames.Ram}={adjustedRamGb}");
++		}
+ 
+ 		static async Task<List<Dictionary<string, string>>?> ReadLinuxHwPropsAsync(string fileName, ILogger logger)
+ 		{
+diff --git a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Compute/ComputeService.cs b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Compute/ComputeService.cs
+index d91c2e1e1080..4ce53343c644 100644
+--- a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Compute/ComputeService.cs
++++ b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Compute/ComputeService.cs
+@@ -740,12 +740,46 @@ namespace HordeServer.Compute
+ 			{
+ 				// A direct connection with 1-to-1 mapped ports
+ 				Dictionary<string, ComputeResourcePort> ports = new();
+-				ports[ConnectionMetadataPort.ComputeId] = new ComputeResourcePort(computePort, computePort);
++
++				int exposedComputePort = computePort;
++				string? exposedPortStr = agent.GetPropertyValues("ExposedComputePort").FirstOrDefault();
++				if (exposedPortStr != null)
++				{
++					Int32.TryParse(exposedPortStr, out exposedComputePort);
++				}
++				ports[ConnectionMetadataPort.ComputeId] = new ComputeResourcePort(exposedComputePort, computePort);
++
+ 				foreach ((string portId, int port) in arp.Ports)
+ 				{
+ 					ports[portId] = new ComputeResourcePort(port, port);
+ 				}
+ 
++				// Allow agent to override default Uba ports
++				string? ubaPortStr = agent.GetPropertyValues("UbaPort").FirstOrDefault();
++				if (ubaPortStr != null && Int32.TryParse(ubaPortStr, out int ubaPort))
++				{
++					int exposedUbaPort = ubaPort;
++					string? exposedUbaPortStr = agent.GetPropertyValues("ExposedUbaPort").FirstOrDefault();
++					if (exposedUbaPortStr != null && Int32.TryParse(exposedUbaPortStr, out int exposedUbaPortInt))
++					{
++						exposedUbaPort = exposedUbaPortInt;
++					}
++					ports["UbaPort"] = new ComputeResourcePort(exposedUbaPort, ubaPort);
++				}
++
++				// Allow agent to override default UbaProxy ports
++				string? ubaProxyPortStr = agent.GetPropertyValues("UbaProxyPort").FirstOrDefault();
++				if (ubaProxyPortStr != null && Int32.TryParse(ubaProxyPortStr, out int ubaProxyPort))
++				{
++					int exposedUbaProxyPort = ubaProxyPort;
++					string? exposedUbaProxyPortStr = agent.GetPropertyValues("ExposedUbaProxyPort").FirstOrDefault();
++					if (exposedUbaProxyPortStr != null && Int32.TryParse(exposedUbaProxyPortStr, out int exposedUbaProxyPortInt))
++					{
++						exposedUbaProxyPort = exposedUbaProxyPortInt;
++					}
++					ports["UbaProxyPort"] = new ComputeResourcePort(exposedUbaProxyPort, ubaProxyPort);
++				}
++
+ 				return new ComputeResource(ConnectionMode.Direct, agentIp, null, ports, computeTask, agent.Properties, agent.Id, agent.Version, protocol, leaseId);
+ 			}
+ 			else if (arp.ConnectionMode == ConnectionMode.Tunnel && tunnelAddress != null)
+diff --git a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
+index 5f8c6a54edf9..cf9a815888b5 100644
+--- a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
++++ b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
+@@ -810,7 +810,7 @@ namespace uba
+ 		u32 processSlotCount = reader.ReadU32();
+ 		bool dedicated = reader.ReadBool();
+ 
+-		StringBuffer<256> info;
++		StringBuffer<750> info;
+ 		reader.ReadString(info);
+ 
+ 		u64 memAvail = reader.ReadU64();
+diff --git a/Engine/Source/Programs/UnrealBuildAccelerator/Core/Public/UbaBinaryReaderWriter.h b/Engine/Source/Programs/UnrealBuildAccelerator/Core/Public/UbaBinaryReaderWriter.h
+index bd5817bdb3ca..39faaeea8cdf 100644
+--- a/Engine/Source/Programs/UnrealBuildAccelerator/Core/Public/UbaBinaryReaderWriter.h
++++ b/Engine/Source/Programs/UnrealBuildAccelerator/Core/Public/UbaBinaryReaderWriter.h
+@@ -348,7 +348,7 @@ namespace uba
+ 	{
+ 		u64 charLen = Read7BitEncoded();
+ 		UBA_ASSERTF(charLen < strCapacity - 1, TC("Strlen: %llu, Capacity: %llu"), charLen, strCapacity); (void)strCapacity;
+-		return InternalReadString(str, charLen);
++		return InternalReadString(str, charLen < strCapacity - 1 ? charLen : strCapacity - 1);
+ 	}
+ 
+ 	u64 BinaryReader::InternalReadString(tchar* str, u64 charLen)

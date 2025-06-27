@@ -10,7 +10,7 @@ If you're not using Horde as your CI/CD, the **only** viable option for you is `
 
 You need to add the `HathoraFleetManager` source to the Horde Server Compute plugin and rebuild the Horde Server.
 
-1. Make the changes by applying the [`autoscaling-modifications.patch`](./autoscaling-modifications.patch) patch file based on UE 5.5.4 code. To apply the code, copy the patch file into the root of your UE source and run the associated command from the root of the UE source:
+1. Make the changes by applying the [`autoscaling-modifications.patch`](./autoscaling-modifications.patch) patch file based on UE 5.5.4 code (which also works for 5.6.0). To apply the code, copy the patch file into the root of your UE source and run the associated command from the root of the UE source:
 
     ```
     patch -p1 < autoscaling-modifications.patch
