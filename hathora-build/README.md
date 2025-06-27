@@ -10,7 +10,7 @@ If you're using the Epic-provided Horde Server images, you can use one of the im
 1. Under the **Help** menu in the top right, click **Version**
 1. Take note of the **Agent** version (or **Server** if no **Agent** exists)
 1. Go to https://github.com/hathora/uba/pkgs/container/uba/versions
-1. Find the corresponding version; if you don't see a matching version here (including the `-suffix` number), you will need to skip to the next section to [build the Hathora Build yourself](#build-the-hordeagent-folder)
+1. Find the corresponding version; if you don't see a matching version here (including the `-suffix` number), you will need to skip to the next section to [build the Hathora Build yourself](#building-the-image-yourself)
 1. Go to the [Hathora Console](https://console.hathora.dev/) and select the application you'd like to use (create one if needed)
 1. Click **Deploy new version**
 1. Select the **External registry** tab
@@ -20,13 +20,15 @@ If you're using the Epic-provided Horde Server images, you can use one of the im
 1. Click **Create build**
 1. Continue onto Step 3 in [the main instructions for setting up the Hathora Application](../README.md#hathora-application)
 
-## Build the HordeAgent folder
+## Building the image yourself
 
-### If you're rebuilding the Horde Server (autoscaling)
+### Build the HordeAgent folder
+
+#### If you're rebuilding the Horde Server (autoscaling)
 
 If you're rebuilding the Horde Server (only required for autoscaling support), the Horde Agent is built along that process with the correct version. Copy the `Staging/ServerTools/HordeAgent` directory (**not** the Win64 one) and paste it into this directory.
 
-### If you're not rebuilding the Horde Server
+#### If you're not rebuilding the Horde Server
 
 1. Make sure you followed the steps to apply the [base engine modifications](../engine-modifications/README.md)
 1. Go to your Horde Server dashboard
@@ -43,7 +45,7 @@ If you're rebuilding the Horde Server (only required for autoscaling support), t
     ```
 1. Copy the `Staging/ServerTools/HordeAgent` directory (**not** the Win64 one) and paste it into this directory.
 
-## Creating the tarball
+### Creating the tarball
 
 Run the below command from this directory in PowerShell:
 
