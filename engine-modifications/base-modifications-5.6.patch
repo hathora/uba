@@ -77,9 +77,18 @@ index 1b4ae861a9a4..23057675e387 100644
  	void Poll(bool LogReports);
  
 diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp
-index b24d8cf87fc1..32c6b5057e4b 100644
+index b24d8cf87fc1..79d49135b773 100644
 --- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp
 +++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeAgentManager.cpp
+@@ -454,7 +454,7 @@ void FUbaHordeAgentManager::ThreadAgent(FHordeAgentWrapper& Wrapper)
+ 
+ 		if (bUseListen)
+ 		{
+-			UbaAgentArgs.Add(FAnsiString::Printf("-Listen=%u", UbaPort.AgentPort));
++			UbaAgentArgs.Add(FAnsiString::Printf("-Listen=%u", Agent->GetMachineInfo().UbaListenPort));
+ 			UbaAgentArgs.Add(TEXT("-ListenTimeout=10"));
+ 		}
+ 		else
 @@ -482,6 +482,11 @@ void FUbaHordeAgentManager::ThreadAgent(FHordeAgentWrapper& Wrapper)
  		UbaAgentArgs.AddRaw("-Eventfile=%UE_HORDE_TERMINATION_SIGNAL_FILE%");
  		UbaAgentArgs.Add(FAnsiString::Printf("-Description=%s", TCHAR_TO_ANSI(*Agent->GetMachineInfo().LeaseLink)));
@@ -118,6 +127,71 @@ index b24d8cf87fc1..32c6b5057e4b 100644
  		{
  			FString CryptoNonce16;
  			if (Agent->GetMachineInfo().Encryption != EUbaHordeEncryption::None)
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.cpp b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.cpp
+index 522a683f7e68..0eadee62e2ab 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.cpp
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.cpp
+@@ -281,6 +281,11 @@ TSharedPtr<FUbaHordeMetaClient::HordeMachinePromise, ESPMode::ThreadSafe> FUbaHo
+ 
+ 			uint16 LogicalCores = 0;
+ 			uint16 PhysicalCores = 0;
++			FString NonceString = NonceValue->AsString();
++			FString IpString = IpValue->AsString();
++			uint16 PortNumber = (uint16)PortValue->AsNumber();
++			uint16 UbaListenPortNumber = 7001;
++			uint16 UbaExposedPortNumber = UbaListenPortNumber;
+ 
+ 			if (TSharedPtr<FJsonValue> PropertiesValue = OutJson->AsObject()->TryGetField(TEXT("properties")))
+ 			{
+@@ -304,6 +309,18 @@ TSharedPtr<FUbaHordeMetaClient::HordeMachinePromise, ESPMode::ThreadSafe> FUbaHo
+ 					{
+ 						PhysicalCores = (uint16)FCString::Atoi(*PropertyElementString + 14);
+ 					}
++					if (PropertyElementString.StartsWith(TEXT("ExposedComputePort=")))
++					{
++						PortNumber = (uint16)FCString::Atoi(*PropertyElementString + 19);
++					}
++					if (PropertyElementString.StartsWith(TEXT("UbaPort=")))
++					{
++						UbaListenPortNumber = (uint16)FCString::Atoi(*PropertyElementString + 8);
++					}
++					if (PropertyElementString.StartsWith(TEXT("ExposedUbaPort=")))
++					{
++						UbaExposedPortNumber = (uint16)FCString::Atoi(*PropertyElementString + 15);
++					}
+ 				}
+ 			}
+ 
+@@ -320,14 +337,11 @@ TSharedPtr<FUbaHordeMetaClient::HordeMachinePromise, ESPMode::ThreadSafe> FUbaHo
+ 				Info.LogicalCores = 16; // Wild guess
+ 			}
+ 
+-			// Log summary of assigned Horde machine
+-			FString NonceString = NonceValue->AsString();
+-			FString IpString = IpValue->AsString();
+-			uint16 PortNumber = (uint16)PortValue->AsNumber();
+-
+ 			// Return final response information
+ 			Info.Ip = IpString;
+ 			Info.Port = PortNumber;
++			Info.UbaListenPort = UbaListenPortNumber;
++			Info.UbaExposedPort = UbaExposedPortNumber;
+ 			FString::ToHexBlob(NonceString, Info.Nonce, HORDE_NONCE_SIZE);
+ 
+ 			TStringBuilder<512> HordeMachineSummary;
+diff --git a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.h b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.h
+index 8919652bf397..d4841847705b 100644
+--- a/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.h
++++ b/Engine/Source/Developer/UbaCoordinatorHorde/Private/UbaHordeMetaClient.h
+@@ -40,6 +40,8 @@ struct FHordeRemoteMachineInfo
+ 	EUbaHordeConnectionMode ConnectionMode = EUbaHordeConnectionMode::Direct;
+ 	FString ConnectionAddress; // Onyl used for relay mode
+ 	uint16 Port = 0;
++	uint16 UbaListenPort = 0;
++	uint16 UbaExposedPort = 0;
+ 	TMap<FString, FPortInfo> Ports; // Maps compute service names to port/agent-port pairs, e.g. "_horde_compute" -> {Port: 12345, AgentPort: 7000}
+ 	uint16 LogicalCores = 0;
+ 	EUbaHordeEncryption Encryption = EUbaHordeEncryption::None;
 diff --git a/Engine/Source/Programs/Horde/Docs/Deployment/AgentSettings.md b/Engine/Source/Programs/Horde/Docs/Deployment/AgentSettings.md
 index 1fe5f04f4557..dd4397894b0a 100644
 --- a/Engine/Source/Programs/Horde/Docs/Deployment/AgentSettings.md
@@ -237,6 +311,40 @@ index d91c2e1e1080..4ce53343c644 100644
  				return new ComputeResource(ConnectionMode.Direct, agentIp, null, ports, computeTask, agent.Properties, agent.Id, agent.Version, protocol, leaseId);
  			}
  			else if (arp.ConnectionMode == ConnectionMode.Tunnel && tunnelAddress != null)
+diff --git a/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs b/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
+index c83347920a95..67c2af72fb91 100644
+--- a/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
++++ b/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
+@@ -377,7 +377,28 @@ namespace EpicGames.Horde.Compute.Clients
+ 				switch (response.ConnectionMode)
+ 				{
+ 					case ConnectionMode.Direct:
+-						await socket.ConnectAsync(connectionAddress.host, connectionAddress.port, cancellationToken);
++						int ComputePort = response.Port;
++
++						foreach (string property in response.Properties)
++						{
++							int equalsIdx = property.IndexOf('=', StringComparison.OrdinalIgnoreCase);
++							StringView propertyName = new(property, 0, equalsIdx);
++
++							if (propertyName == "ExposedComputePort")
++							{
++								if (!Int32.TryParse(property.AsSpan(equalsIdx + 1), out ComputePort))
++								{
++									workerLogger.LogError("Failed to parse ExposedComputePort property: {Property}", property);
++								}
++								else
++								{
++									agentAddress.host = response.Ip;
++									agentAddress.port = ComputePort;
++								}
++							}
++						}
++
++						await socket.ConnectAsync(IPAddress.Parse(response.Ip), ComputePort, cancellationToken);
+ 						break;
+ 
+ 					case ConnectionMode.Tunnel when !String.IsNullOrEmpty(response.ConnectionAddress):
 diff --git a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
 index 5f8c6a54edf9..cf9a815888b5 100644
 --- a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
@@ -263,3 +371,105 @@ index bd5817bdb3ca..39faaeea8cdf 100644
  	}
  
  	u64 BinaryReader::InternalReadString(tchar* str, u64 charLen)
+diff --git a/Engine/Source/Programs/UnrealBuildTool/Executors/UnrealBuildAccelerator/UBAAgentCoordinatorHorde.cs b/Engine/Source/Programs/UnrealBuildTool/Executors/UnrealBuildAccelerator/UBAAgentCoordinatorHorde.cs
+index 5505f405b36c..6e5d331d972d 100644
+--- a/Engine/Source/Programs/UnrealBuildTool/Executors/UnrealBuildAccelerator/UBAAgentCoordinatorHorde.cs
++++ b/Engine/Source/Programs/UnrealBuildTool/Executors/UnrealBuildAccelerator/UBAAgentCoordinatorHorde.cs
+@@ -246,6 +246,10 @@ namespace UnrealBuildTool
+ 				"EC2",
+ 				"LeaseId",
+ 				"aws-instance-type",
++				"UbaPort",
++				"ExposedUbaPort",
++				"UbaProxyPort",
++				"ExposedUbaProxyPort",
+ 			};
+ 
+ 		public async Task<bool> AddWorkerAsync(Requirements requirements, UnrealBuildAcceleratorHordeConfig hordeConfig, CancellationToken cancellationToken, int activeCores)
+@@ -261,8 +265,10 @@ namespace UnrealBuildTool
+ 
+ 			const string UbaPortName = "UbaPort";
+ 			const string UbaProxyPortName = "UbaProxyPort";
+-			const int UbaPort = 7001;
+-			const int UbaProxyPort = 7002;
++			int UbaPort = 7001;
++			int UbaProxyPort = 7002;
++			int ExposedUbaPort = UbaPort;
++			int ExposedUbaProxyPort = UbaProxyPort;
+ 
+ 			// Request ID that is unique per attempt to acquire the same compute lease/worker
+ 			// Primarily for tracking worker demand on Horde server as UBAExecutor will repeatedly try adding a new worker
+@@ -292,6 +298,16 @@ namespace UnrealBuildTool
+ 
+ 				++_workerId;
+ 
++				if (!lease.Ports.TryGetValue(UbaPortName, out ConnectionMetadataPort? ubaPort))
++				{
++					ubaPort = new ConnectionMetadataPort(UbaPort, UbaPort);
++				}
++
++				if (!lease.Ports.TryGetValue(UbaProxyPortName, out ConnectionMetadataPort? ubaProxyPort))
++				{
++					ubaProxyPort = new ConnectionMetadataPort(UbaProxyPort, UbaProxyPort);
++				}
++
+ 				workerLogger.LogDebug("Agent properties:");
+ 
+ 				string agentName = String.Empty;
+@@ -299,6 +315,10 @@ namespace UnrealBuildTool
+ 				string computeIp = String.Empty;
+ 				string leaseId = string.Empty;
+ 				string instanceType = string.Empty;
++				UbaPort = ubaPort.AgentPort;
++				ExposedUbaPort = ubaPort.Port;
++				UbaProxyPort = ubaProxyPort.AgentPort;
++				ExposedUbaProxyPort = ubaProxyPort.Port;
+ 				foreach (string property in lease.Properties)
+ 				{
+ 					int equalsIdx = property.IndexOf('=', StringComparison.OrdinalIgnoreCase);
+@@ -327,9 +347,28 @@ namespace UnrealBuildTool
+ 						{
+ 							instanceType = property[(equalsIdx + 1)..];
+ 						}
++						else if (propertyName == "UbaPort")
++						{
++							Int32.TryParse(property.AsSpan(equalsIdx + 1), out UbaPort);
++						}
++						else if (propertyName == "ExposedUbaPort")
++						{
++							Int32.TryParse(property.AsSpan(equalsIdx + 1), out ExposedUbaPort);
++						}
++						else if (propertyName == "UbaProxyPort")
++						{
++							Int32.TryParse(property.AsSpan(equalsIdx + 1), out UbaProxyPort);
++						}
++						else if (propertyName == "ExposedUbaProxyPort")
++						{
++							Int32.TryParse(property.AsSpan(equalsIdx + 1), out ExposedUbaProxyPort);
++						}
+ 					}
+ 				}
+ 
++				ubaPort = new ConnectionMetadataPort(ExposedUbaPort, UbaPort);
++				ubaProxyPort = new ConnectionMetadataPort(ExposedUbaProxyPort, UbaProxyPort);
++
+ 				string desc = instanceType;
+ 				if (!String.IsNullOrEmpty(leaseId))
+ 				{
+@@ -339,16 +378,6 @@ namespace UnrealBuildTool
+ 				// When using relay connection mode, the IP will be relay server's IP
+ 				string ip = String.IsNullOrEmpty(lease.Ip) ? computeIp : lease.Ip;
+ 
+-				if (!lease.Ports.TryGetValue(UbaPortName, out ConnectionMetadataPort? ubaPort))
+-				{
+-					ubaPort = new ConnectionMetadataPort(UbaPort, UbaPort);
+-				}
+-
+-				if (!lease.Ports.TryGetValue(UbaProxyPortName, out ConnectionMetadataPort? ubaProxyPort))
+-				{
+-					ubaProxyPort = new ConnectionMetadataPort(UbaProxyPort, UbaProxyPort);
+-				}
+-
+ 				string exeName = OperatingSystem.IsWindows() ? "UbaAgent.exe" : "UbaAgent";
+ 				BlobLocator locator = _ubaAgentLocator;
+ 				Worker worker = new()
