@@ -50,7 +50,7 @@ UBA on Hathora needs its own Hathora Application. Once following all of the step
 > [!TIP]
 > If you have bare metal on Hathora or have [autoscaling](#horde-autoscaling) set up, you can disable the Idle Timeout field to prevent agents from continuously restarting every 5 minutes.
 
-### Horde Pool
+### Horde Pool and UBA Permissions
 
 You need to add a node pool in Horde for the Hathora agents to associate with. This is done by modifying your Horde Server's `globals.json`
 
@@ -58,32 +58,93 @@ You need to add a node pool in Horde for the Hathora agents to associate with. T
 - **Linux/macOS location:** In the `Data` folder under the application directory
 - **Docker location:** `/app/Data/globals.json` (you likely have a volume set up that maps `/app/Data` to a local directory outside of Docker)
 
-Apply a manual merge to add an element to the `Plugins.Compute.Pools` JSON array:
+We also need to enable permissions to run UBA tasks from a development machine (Horde CI jobs don't need  this, but we recommend adding it anyway).
+
+In total, here are the changes you need to `globals.json`; make sure you merge them appropriately with existing content:
 
 ``` json
 {
-	"Plugins": {
-		"Compute": {
-			"Pools": [
-				{
-					"Id": "hathora",
-					"Name": "Hathora",
-					"Properties": {
-						"Color": "470"
-					},
-					"Color": "Default",
-					"EnableAutoscaling": false,
-					"ConformInterval": "00:01:00",
-					"Condition": "HordePoolName == 'Hathora'"
-				}
-			]
-		}
-	}
+  "plugins": {
+    "compute": {
+      "clusters": [
+        {
+          "id": "uba",
+          "namespaceId": "horde.compute",
+          "Condition": "pool == 'hathora'",
+          "acl": {
+            "entries": [
+              {
+                "claim": {
+                  "type": "http://epicgames.com/ue/horde/group",
+                  "value": "UBA"
+                },
+                "actions": ["AddComputeTasks"]
+              }
+            ]
+          }
+        }
+      ],
+      "pools": [
+        {
+          "id": "hathora",
+          "name": "Hathora",
+          "properties": {
+            "Color": "470"
+          },
+          "color": "Default",
+          "enableAutoscaling": false,
+          "conformInterval": "00:01:00",
+          "condition": "HordePoolName == 'Hathora'"
+        }
+      ]
+    }
+  },
+
+  "acl": {
+    "entries": [
+      {
+        "claim": {
+          "type": "http://epicgames.com/ue/horde/group",
+          "value": "UBA"
+        },
+        "profiles": [
+          "run-uba"
+        ]
+      }
+    ],
+    "profiles": [
+      {
+        "id": "run-uba"
+      }
+    ]
+  }
 }
 ```
 
 > [!NOTE]
 > You can change the `id`, `name`, and `Color` fields above, but the `condition` field's `'Hathora'` should not be changed as it needs to match the `HORDE_POOL_NAME` environment variable we set to `Hathora` above.
+
+The above changes add a new claim for a group named `UBA`, which an admin can assign the group to the user to give them permission to use the UBA pool from their development machine:
+1. Go to **Server > User Accounts** (or `horde.yourdomain.com/accounts`)
+1. Press the pencil edit icon next to the user
+1. In the **Edit Account** modal, find **Groups** add `UBA`
+1. Click **Save**
+
+The user should log out and log back in to the Horde dashboard before getting their auth token in the below [authentication section](#authentication).
+
+#### Extending User Token Expiry
+
+If users need to use UBA from their dev machine, the authentication tokens they use expire in 8 hours by default with no logic built in for refreshing the token. This can be cumbersome for devs to get a new auth token and set it in their `BuildConfiguration.xml` every day. Please consider the security implications when extending this value.
+
+You can extend this expiry with the `jwtExpiryTimeHours` variable in `server.json`:
+
+``` jsonc
+{
+  "Horde": {
+    "jwtExpiryTimeHours": 168 // for 7 days, or 720 for 30 days
+  }
+}
+```
 
 ### Unreal Project Configuration
 
@@ -94,6 +155,7 @@ Your Unreal project needs to be configured to use the Horde server and UBA pool 
 ServerUrl=https://horde.yourdomain.com
 ; UbaPool should match the `id` field in your `globals.json`
 UbaPool=hathora
+UbaCluster=uba
 ; UbaEnabled can also be set to BuildMachineOnly, which will only be enabled if the
 ; `IsBuildMachine` environment variable is set to `1`. This is useful if you want to
 ; only have UBA run for your CI/CD machines; you'll need to configure those jobs to set
