@@ -1,0 +1,108 @@
+diff --git a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
+index c627d1e14e08..a3b075fd3d96 100644
+--- a/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
++++ b/Engine/Source/Programs/UnrealBuildAccelerator/Common/Private/UbaSessionServer.cpp
+@@ -2178,19 +2178,19 @@ namespace uba
+ 		return true;
+ 	}
+ 
+-	bool SessionServer::CreateFile(CreateFileResponse& out, const CreateFileMessage& msg)
++	bool SessionServer::CreateFileForRead(CreateFileResponse& out, TrackWorkScope& tws, const StringView& fileName, const StringKey& fileNameKey, ProcessImpl& process, const ApplicationRules& rules)
+ 	{
+-		if (!m_shouldWriteToDisk && ((msg.access & FileAccess_Write) == 0))
++		if (!m_shouldWriteToDisk)
+ 		{
+ 			SCOPED_READ_LOCK(m_receivedFilesLock, lock);
+-			auto findIt = m_receivedFiles.find(msg.fileNameKey);
++			auto findIt = m_receivedFiles.find(fileNameKey);
+ 			if (findIt != m_receivedFiles.end())
+ 			{
+-				u64 memoryMapAlignment = GetMemoryMapAlignment(msg.fileName);
++				u64 memoryMapAlignment = GetMemoryMapAlignment(fileName);
+ 				if (!memoryMapAlignment)
+ 					memoryMapAlignment = 4096;
+ 				MemoryMap map;
+-				if (!CreateMemoryMapFromView(map, msg.fileNameKey, msg.fileName.data, findIt->second, memoryMapAlignment))
++				if (!GetOrCreateMemoryMapFromStorage(map, fileNameKey, fileName.data, findIt->second, memoryMapAlignment))
+ 					return false;
+ 				out.directoryTableSize = GetDirectoryTableSize();
+ 				out.mappedFileTableSize = GetFileMappingSize();
+@@ -2199,7 +2199,68 @@ namespace uba
+ 				return true;
+ 			}
+ 		}
+-		return Session::CreateFile(out, msg);
++		return Session::CreateFileForRead(out, tws, fileName, fileNameKey, process, rules);
++	}
++
++	bool SessionServer::GetOutputFileSizeInternal(u64& outSize, const StringKey& fileNameKey, StringView filePath)
++	{
++		if (Session::GetOutputFileSizeInternal(outSize, fileNameKey, filePath))
++			return true;
++		SCOPED_READ_LOCK(m_receivedFilesLock, lock);
++		auto findIt = m_receivedFiles.find(fileNameKey);
++		if (findIt == m_receivedFiles.end())
++			return false;
++		CasKey casKey = findIt->second;
++		lock.Leave();
++		return m_storage.GetFileSize(outSize, casKey, filePath.data);
++	}
++
++	bool SessionServer::GetOutputFileDataInternal(void* outData, const StringKey& fileNameKey, StringView filePath, bool deleteInternalMapping)
++	{
++		if (Session::GetOutputFileDataInternal(outData, fileNameKey, filePath, deleteInternalMapping))
++			return true;
++		SCOPED_READ_LOCK(m_receivedFilesLock, lock);
++		auto findIt = m_receivedFiles.find(fileNameKey);
++		if (findIt == m_receivedFiles.end())
++			return false;
++		CasKey casKey = findIt->second;
++		lock.Leave();
++		if (!m_storage.GetFileData(outData, casKey, filePath.data))
++			return false;
++		if (!deleteInternalMapping)
++			return true;
++
++		SCOPED_WRITE_LOCK(m_receivedFilesLock, lock2);
++		m_receivedFiles.erase(findIt);
++		lock2.Leave();
++
++		m_storage.DropCasFile(casKey, true, filePath.data);
++		return true;
++	}
++
++	bool SessionServer::WriteOutputFileInternal(const StringKey& fileNameKey, StringView filePath, bool deleteInternalMapping)
++	{
++		if (Session::WriteOutputFileInternal(fileNameKey, filePath, deleteInternalMapping))
++			return true;
++
++		SCOPED_READ_LOCK(m_receivedFilesLock, lock);
++		auto findIt = m_receivedFiles.find(fileNameKey);
++		if (findIt == m_receivedFiles.end())
++			return false;
++		CasKey casKey = findIt->second;
++		lock.Leave();
++
++		bool res = m_storage.CopyOrLink(casKey, filePath.data, DefaultAttributes());
++
++		if (!deleteInternalMapping)
++			return res;
++
++		SCOPED_WRITE_LOCK(m_receivedFilesLock, lock2);
++		m_receivedFiles.erase(findIt);
++		lock2.Leave();
++
++		m_storage.DropCasFile(casKey, true, filePath.data);
++		return res;
+ 	}
+ 
+ 	void SessionServer::FileEntryAdded(StringKey fileNameKey, u64 lastWritten, u64 size)
+@@ -2462,7 +2523,7 @@ namespace uba
+ 								Storage::GetMappingString(mappingName, entry.mapping, entry.mappingOffset);
+ 							else
+ 								mappingName.Append(TCV("Not valid"));
+-							logStr.Appendf(TC(" Success: %s Size: %u IsDir: %s Mapping name: %s Mapping offset: %u"), ToString(entry.success), entry.size, ToString(entry.isDir), mappingName.data, entry.mappingOffset);
++							logStr.Appendf(TC(" Success: %s Size: %u IsDir: %s Mapping name: %s Mapping offset: %u"), ToString(entry.success), entry.contentSize, ToString(entry.isDir), mappingName.data, entry.mappingOffset);
+ 						}
+ 						else
+ 						{

@@ -42,10 +42,10 @@ You can build these yourself, but we have also provided prebuilt binaries you ca
 1. Copy the extracted files and replace the ones in `Engine/Binaries/Win64/UnrealBuildAccelerator/x64`
 1. If you're distributing your engine to your team, commit these into version control; otherwise these steps need to be repeated for all build machines
 
-> [!TIP]
-> We will provide a 5.6 image once 5.6.0 is fully released.
-
 ### Building UBA Binaries Manually
+
+> [!WARNING]
+> Epic released `5.6.1` with compiler errors in the `UbaSessionServer` class. You will need to apply the [`fix-5.6.1-UbaSessionServer.patch`](./fix-5.6.1-UbaSessionServer.patch) patch file if you're specifically on `5.6.1`. Other versions should not be impacted.
 
 You can build these binaries yourself with the below commands:
 
