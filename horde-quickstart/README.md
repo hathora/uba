@@ -12,6 +12,7 @@ To generate a self-signed certificate:
 
 1. Open PowerShell as an administrator on a Windows machine
 1. Run: `./gen-cert.ps1`
+1. Copy the generated `cert.pfx` file to the root of this directory in your Linux machine
 
 ## Cloudflare
 

@@ -23,7 +23,7 @@ if [ ! -f data/cert.pfx ]; then
   if [ -f cert.pfx ]; then
     cp cert.pfx data/cert.pfx
   else
-    echo "Certificate file cert.pfx not found in data/ or ./. Please add your SSL certificate."
+    echo "Could not find ./data/cert.pfx or ./cert.pfx. Please add your SSL certificate."
     exit 1
   fi
 fi
