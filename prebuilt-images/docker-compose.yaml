@@ -1,7 +1,7 @@
 services:
   horde-server:
     container_name: horde-server
-    image: ghcr.io/epicgames/horde-server:5.4.0
+    image: horde-server:bundled
     pull_policy: never
     restart: always
     depends_on:
