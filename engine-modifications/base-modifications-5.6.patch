@@ -259,58 +259,6 @@ index 179a243f87be..68428c298e51 100644
  
  		static async Task<List<Dictionary<string, string>>?> ReadLinuxHwPropsAsync(string fileName, ILogger logger)
  		{
-diff --git a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Compute/ComputeService.cs b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Compute/ComputeService.cs
-index d91c2e1e1080..4ce53343c644 100644
---- a/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Compute/ComputeService.cs
-+++ b/Engine/Source/Programs/Horde/Plugins/Compute/HordeServer.Compute/Compute/ComputeService.cs
-@@ -740,12 +740,46 @@ namespace HordeServer.Compute
- 			{
- 				// A direct connection with 1-to-1 mapped ports
- 				Dictionary<string, ComputeResourcePort> ports = new();
--				ports[ConnectionMetadataPort.ComputeId] = new ComputeResourcePort(computePort, computePort);
-+
-+				int exposedComputePort = computePort;
-+				string? exposedPortStr = agent.GetPropertyValues("ExposedComputePort").FirstOrDefault();
-+				if (exposedPortStr != null)
-+				{
-+					Int32.TryParse(exposedPortStr, out exposedComputePort);
-+				}
-+				ports[ConnectionMetadataPort.ComputeId] = new ComputeResourcePort(exposedComputePort, computePort);
-+
- 				foreach ((string portId, int port) in arp.Ports)
- 				{
- 					ports[portId] = new ComputeResourcePort(port, port);
- 				}
- 
-+				// Allow agent to override default Uba ports
-+				string? ubaPortStr = agent.GetPropertyValues("UbaPort").FirstOrDefault();
-+				if (ubaPortStr != null && Int32.TryParse(ubaPortStr, out int ubaPort))
-+				{
-+					int exposedUbaPort = ubaPort;
-+					string? exposedUbaPortStr = agent.GetPropertyValues("ExposedUbaPort").FirstOrDefault();
-+					if (exposedUbaPortStr != null && Int32.TryParse(exposedUbaPortStr, out int exposedUbaPortInt))
-+					{
-+						exposedUbaPort = exposedUbaPortInt;
-+					}
-+					ports["UbaPort"] = new ComputeResourcePort(exposedUbaPort, ubaPort);
-+				}
-+
-+				// Allow agent to override default UbaProxy ports
-+				string? ubaProxyPortStr = agent.GetPropertyValues("UbaProxyPort").FirstOrDefault();
-+				if (ubaProxyPortStr != null && Int32.TryParse(ubaProxyPortStr, out int ubaProxyPort))
-+				{
-+					int exposedUbaProxyPort = ubaProxyPort;
-+					string? exposedUbaProxyPortStr = agent.GetPropertyValues("ExposedUbaProxyPort").FirstOrDefault();
-+					if (exposedUbaProxyPortStr != null && Int32.TryParse(exposedUbaProxyPortStr, out int exposedUbaProxyPortInt))
-+					{
-+						exposedUbaProxyPort = exposedUbaProxyPortInt;
-+					}
-+					ports["UbaProxyPort"] = new ComputeResourcePort(exposedUbaProxyPort, ubaProxyPort);
-+				}
-+
- 				return new ComputeResource(ConnectionMode.Direct, agentIp, null, ports, computeTask, agent.Properties, agent.Id, agent.Version, protocol, leaseId);
- 			}
- 			else if (arp.ConnectionMode == ConnectionMode.Tunnel && tunnelAddress != null)
 diff --git a/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs b/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
 index c83347920a95..67c2af72fb91 100644
 --- a/Engine/Source/Programs/Shared/EpicGames.Horde/Compute/Clients/ServerComputeClient.cs
